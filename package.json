@@ -1,0 +1,41 @@
+{
+    "name": "proof_playwright",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "npx playwright test",
+        "test:debug": "npx playwright test --debug",
+        "test:headed": "npx playwright test --headed",
+        "test:ui": "npx playwright test --ui",
+        "test:trace": "npx playwright test --trace on",
+        "test:report": "npx playwright show-report",
+        "test:install": "npx playwright install",
+        "test:install-deps": "npx playwright install-deps",
+        "test:specific": "npx playwright test",
+        "test:e2e": "playwright test",
+        "test:e2e:company": "playwright test e2e/Command/Company-alerts-not-bleeding-over.spec.js",
+        "clean": "rm -rf test-results playwright-report traces",
+        "clean:win": "rmdir /s /q test-results playwright-report traces 2>nul || echo Cleaned",
+        "cleanup-artifacts": "node scripts/cleanup-artifacts.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "module",
+    "devDependencies": {
+        "@playwright/test": "^1.56.1",
+        "@types/node": "^22.15.21",
+        "dotenv": "^16.6.1",
+        "playwright": "^1.56.0"
+    },
+    "dependencies": {
+        "@elastic/mcp-server-elasticsearch": "^0.3.1",
+        "axios": "^1.11.0",
+        "papaparse": "^5.5.3",
+        "pdf-parse": "^1.1.1",
+        "playwright-core": "^1.56.1",
+        "undici-types": "^6.21.0",
+        "xlsx": "^0.18.5"
+    }
+}

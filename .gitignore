@@ -1,0 +1,97 @@
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Session state and authentication
+userStorageState.json
+userStorageState_*.json
+sessionValidity_*.json
+
+# Screenshots and test artifacts
+/screenshots/
+/videos/
+/downloads/
+
+# Additional test artifacts
+test-failures/
+test-downloads/
+run-out.json
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Package manager files (keep package-lock.json, exclude others)
+yarn.lock
+pnpm-lock.yaml
+
+# Temporary files
+*.tmp
+*.temp
+
+# Windows specific
+desktop.ini
+
+# Debug files and traces
+debug-*.png
+debug-*.jpg
+trace.zip
+traces/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Build outputs
+dist/
+build/
+out/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Test artifacts specific to this project
+Downloads/
