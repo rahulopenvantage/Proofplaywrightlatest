@@ -1,0 +1,64 @@
+name: Playwright (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      config:
+        description: 'Playwright config file (optional)'
+        required: false
+        default: 'playwright.config.js'
+      test_filter:
+        description: 'Test file or grep pattern (optional)'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # Map GitHub secrets to env vars expected by tests. Add these in repo settings.
+      ADMIN_MS_USERNAME: ${{ secrets.ADMIN_MS_USERNAME }}
+      ADMIN_MS_PASSWORD: ${{ secrets.ADMIN_MS_PASSWORD }}
+      NORMAL_MS_USERNAME: ${{ secrets.NORMAL_MS_USERNAME }}
+      NORMAL_MS_PASSWORD: ${{ secrets.NORMAL_MS_PASSWORD }}
+      ELASTICSEARCH_URL: ${{ secrets.ELASTICSEARCH_URL }}
+      ELASTICSEARCH_API_KEY: ${{ secrets.ELASTICSEARCH_API_KEY }}
+      AURA_EMAIL: ${{ secrets.AURA_EMAIL }}
+      AURA_PASSWORD: ${{ secrets.AURA_PASSWORD }}
+      ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+      UAT_URL: ${{ secrets.UAT_URL }}
+      UAT_SASKEY: ${{ secrets.UAT_SASKEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright tests
+        env:
+          # Pass through any additional env from secrets or variables.
+          PW_TEST_FILTER: ${{ inputs.test_filter }}
+        run: |
+          CONFIG=${{ inputs.config }}
+          if [ -z "$CONFIG" ]; then CONFIG=playwright.config.js; fi
+          if [ -n "$PW_TEST_FILTER" ]; then npx playwright test -c "$CONFIG" "$PW_TEST_FILTER"; else npx playwright test -c "$CONFIG"; fi
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
