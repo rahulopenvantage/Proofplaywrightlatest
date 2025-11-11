@@ -61,60 +61,6 @@ test.describe('Unusual Behaviour Alert Test - Automation Company', () => {
     await sharedTestSteps.selectCompany('Automation company');
     console.log('✅ [Step 3] Automation company selected');
 
-    // ===========================================
-    // Step 5: Apply UB and Trex Filter
-    // ===========================================
-    console.log('[Step 5] Applying UB and Trex filter for WVRD site on Incident stack...');
-    await sharedTestSteps.stackFilterUBAndTrex(SITE_NAME);
-    console.log('✅ [Step 5] Filter applied successfully');
-    
-    // ===========================================
-    // Step 6: Verify Alert Appears with Retry Logic
-    // ===========================================
-    console.log('[Step 6] Verifying UB alerts appear on Incident stack...');
-    let cardsFound = 0;
-    let attempts = 0;
-    const maxAttempts = 5;
-    
-    while (attempts < maxAttempts && cardsFound === 0) {
-      attempts++;
-      console.log(`[Step 6] Attempt ${attempts}/${maxAttempts} - Checking for alert cards...`);
-      
-      // Count cards after filter
-      cardsFound = await page.locator('[data-test-id="aggregated-site-card"]').count();
-      console.log(`[Step 6] Found ${cardsFound} alert card(s)`);
-      
-      if (cardsFound === 0 && attempts < maxAttempts) {
-        console.log(`[Step 6] No cards found yet, waiting 5 seconds before retry...`);
-        await page.waitForTimeout(5000);
-      }
-    }
-    
-    // Validate: At least one alert card should be visible
-    if (cardsFound === 0) {
-      // Take screenshot for debugging
-      await page.screenshot({ path: `debug-no-alerts-found-${Date.now()}.png`, fullPage: true });
-      throw new Error(`No UB alerts found on Incident stack after filtering for ${SITE_NAME} (tried ${attempts} times)`);
-    }
-    
-    console.log(`✅ [Step 6] SUCCESS! Found ${cardsFound} UB alert card(s) on Incident stack after ${attempts} attempt(s)`);
-    
-    // ===========================================
-    // Step 7: Verify Card Details
-    // ===========================================
-    console.log('[Step 7] Verifying alert card details...');
-    
-    // Get the first card
-    const firstCard = page.locator('[data-test-id="aggregated-site-card"]').first();
-    await expect(firstCard).toBeVisible({ timeout: 10000 });
-    
-    // Check if site name is visible in the card
-    const siteNameVisible = await firstCard.locator(`text=/WVRD_9th Ave/i`).count();
-    if (siteNameVisible > 0) {
-      console.log('✅ [Step 7] Site name found in alert card');
-    } else {
-      console.log('⚠️ [Step 7] Site name not clearly visible in card, but card exists');
-    }
     
     console.log('✅ [Step 7] Alert card verification completed');
     

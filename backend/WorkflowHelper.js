@@ -26,156 +26,13 @@ export class WorkflowHelper {
                                        .filter({ hasText: this.boeingSiteCardNameText })
                                        .filter({ hasText: 'MA' });
 
-        this.wrongDismissButton = page.locator('[data-test-id="wrongDismiss"]');
-        // Using getByText with XPath equivalent for RESOLVE ALL and POSITIVE buttons
-        this.resolveAllButton = page.locator('//button[normalize-space(.)="RESOLVE ALL"]');
-        this.positiveButton = page.locator('//button[normalize-space(.)="POSITIVE"]');
-    }
-    /**
-     * Dynamically selects the first option from each of the three menus in the resolve flow, repeated
-     * twice more (total 3 rounds), then clicks the final Resolve/confirm button.
-     * Uses role/text-based selectors only (no class names), targeting the active modal dialog.
-     */
-    async _dynamicSelectFirstOptionsAndResolve() {
-        // Prefer an aria-modal dialog; fallback to any role=dialog
-        const dialog = this.page.locator('[role="dialog"][aria-modal="true"]').first();
-        const anyDialog = this.page.locator('[role="dialog"]').first();
-        const activeDialog = (await dialog.count()) ? dialog : anyDialog;
-        await activeDialog.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
-
-        // Helper: click first selectable option in the current step
-        const clickFirstSelectable = async () => {
-            // Normalize scroll to ensure first items are in view
-            try {
-                await activeDialog.evaluate(el => { el.scrollTop = 0; });
-            } catch {}
-
-            // Candidate selectors in priority order
-            const selectors = [
-                '[role="radio"]',
-                '[role="option"]',
-                '[role="menuitemradio"]',
-                'button',
-                '[role="button"]',
-                '[tabindex]:not([tabindex="-1"])'
-            ];
-
-            // Exclusion pattern for navigation buttons
-            /** @param {string | null | undefined} text */
-            const isNavButton = (text) => /^(Back|Cancel|Close|Resolve All|Next|Previous)$/i.test((text || '').trim());
-
-            for (const sel of selectors) {
-                const list = activeDialog.locator(sel);
-                const count = await list.count().catch(() => 0);
-                if (count === 0) continue;
-
-                // Find first visible & non-nav element
-                const max = Math.min(count, 10);
-                for (let i = 0; i < max; i++) {
-                    const el = list.nth(i);
-                    if (!(await el.isVisible().catch(() => false))) continue;
-                    const name = (await el.textContent().catch(() => '')) || '';
-                    if (sel.includes('button') && isNavButton(name)) continue;
-                    try {
-                        if (sel === '[role="radio"]') {
-                            await el.check({ force: true });
-                        } else {
-                            await el.click({ force: true });
-                        }
-                        return true;
-                    } catch {}
-                }
-            }
-            return false;
-        };
-
-        // Attempt up to 6 selections to cover Sector → Type → Outcome transitions (some UIs require extra clicks)
-        for (let i = 0; i < 6; i++) {
-            const clicked = await clickFirstSelectable();
-            if (!clicked) {
-                console.log('[WorkflowHelper] No selectable option found on this step');
-                break;
-            }
-            await this.page.waitForTimeout(250);
-
-            // If Resolve button is visible/enabled, we can stop selecting
-            const resolveReady = await activeDialog.getByRole('button', { name: /^Resolve$/i })
-                .isVisible({ timeout: 200 }).catch(() => false);
-            if (resolveReady && i >= 2) break; // Ensure we attempted at least 3 selections
-        }
-
-        // Click the primary Resolve button (not Resolve All)
-        const resolveBtn = activeDialog.getByRole('button', { name: /^Resolve$/i }).first();
-        if (await resolveBtn.isVisible().catch(() => false)) {
-            await resolveBtn.click({ force: true });
-        } else {
-            // Fallback: click last non-nav button
-            const fallbackBtn = activeDialog.locator('button:visible').filter({ hasNotText: /(Back|Cancel|Close|Resolve All)/i }).last();
-            if (await fallbackBtn.isVisible().catch(() => false)) {
-                await fallbackBtn.click({ force: true });
-            }
-        }
-
-        // Wait for dialog to close to ensure action completed
-        await activeDialog.waitFor({ state: 'hidden', timeout: 20000 }).catch(() => {});
-        await this.page.waitForLoadState('networkidle');
-        await this._ensureNoModalOrOverlay({ timeoutMs: 15000 }).catch(() => {});
+    this.wrongDismissButton = page.locator('[data-test-id="wrongDismiss"]');
+    // Robust: prefer role-based case-insensitive button names, fallback to XPath text match
+    this.resolveAllButton = page.getByRole('button', { name: /resolve all/i }).first();
+    this.resolveAllButtonFallback = page.locator('//button[normalize-space(.)="RESOLVE ALL"]');
+    this.positiveButton = page.getByRole('button', { name: /positive/i }).first();
     }
 
-    /**
-     * Ensure there are no visible modal dialogs or overlays intercepting clicks.
-     * Avoids class-based selectors; relies on role/text semantics and generic dismissal patterns.
-     * @param {{ timeoutMs?: number }} [opts]
-     */
-    async _ensureNoModalOrOverlay(opts) {
-        const timeoutMs = opts?.timeoutMs ?? 15000;
-        const start = Date.now();
-
-        const dialogs = this.page.locator('[role="dialog"]');
-        const activeModal = this.page.locator('[role="dialog"][aria-modal="true"]').first();
-
-        /** Helper to determine if any dialog is visible */
-        const anyDialogVisible = async () => {
-            const count = await dialogs.count();
-            for (let i = 0; i < count; i++) {
-                const dlg = dialogs.nth(i);
-                if (await dlg.isVisible().catch(() => false)) return true;
-            }
-            return false;
-        };
-
-        // Try up to timeoutMs to close any visible dialogs/overlays
-        while (Date.now() - start < timeoutMs) {
-            if (!(await anyDialogVisible())) return; // Nothing visible
-
-            // Prefer Close/Cancel buttons inside the active modal
-            const container = (await activeModal.isVisible().catch(() => false)) ? activeModal : dialogs.first();
-            const closeBtn = container.getByRole('button', { name: /^(Close|Cancel|Dismiss)$/i }).first();
-            if (await closeBtn.isVisible().catch(() => false)) {
-                await closeBtn.click({ force: true }).catch(() => {});
-                await this.page.waitForTimeout(200);
-            } else {
-                // Try Escape key to dismiss react-aria overlays
-                await this.page.keyboard.press('Escape').catch(() => {});
-                await this.page.waitForTimeout(200);
-            }
-
-            // As a last resort, click a safe area (main region or body top-left)
-            const mainRegion = this.page.locator('main, [role="main"]').first();
-            if (await mainRegion.isVisible().catch(() => false)) {
-                await mainRegion.click({ position: { x: 5, y: 5 } }).catch(() => {});
-            } else {
-                await this.page.mouse.click(10, 10).catch(() => {});
-            }
-
-            // Give time for overlays to animate out
-            await this.page.waitForTimeout(250);
-
-            // If still visible, loop again until timeout
-        }
-        // If we reach here, an overlay may still be present; log but don't throw to avoid flakiness
-        console.warn('[WorkflowHelper] ⚠️ Overlay may still be present after timeout; proceeding with caution');
-    }
     /**
      * Wait until the current stack shows empty state or has zero cards.
      * Returns true if empty state confirmed within timeout.
@@ -295,7 +152,9 @@ export class WorkflowHelper {
                     if (positiveVisible) {
                         await this.positiveButton.click({ force: true });
                     } else {
-                        await this._dynamicSelectFirstOptionsAndResolve();
+                        // Fallback: wait briefly and try pressing Escape to dismiss any dialog
+                        await this.page.waitForTimeout(500);
+                        await this.page.keyboard.press('Escape').catch(() => {});
                     }
                 }
 
@@ -307,122 +166,225 @@ export class WorkflowHelper {
             const alertsDashboardPage = new (await import('./AlertsDashboardPage.js')).AlertsDashboardPage(this.page);
             await alertsDashboardPage.expandAndSelectFirstManualAlertCard();
             await this.sopPage.completeAndValidateSop();
-            await this.resolveAllButton.click({ force: true });
+            // Prefer robust Resolve All button; fallback to strict xpath
+            if (await this.resolveAllButton.isVisible().catch(() => false)) {
+                await this.resolveAllButton.click({ force: true });
+            } else {
+                await this.resolveAllButtonFallback.click({ force: true }).catch(() => {});
+            }
             await this.page.waitForLoadState('networkidle');
-            await this._dynamicSelectFirstOptionsAndResolve();
+            // Use fixed explicit choices per user specification (Infrastructure optional)
+            await this._resolveUbTrexExplicitSequence();
             await this._waitForStackEmpty('Situation', { timeoutMs: 30000, pollMs: 1000 });
         }
     }
     /**
-     * Performs dynamic cleanup routine for UB and Trex alerts.
-     * Always processes Incident stack first, then Situation stack.
+     * Clean up UB (Unusual Behaviour) and Trex alerts for a specific site
+     * 
+     * 8-STEP FLOW WITH SINGLE FILTER APPLICATION:
+     * 1. Already on Alerts Dashboard (handled by caller)
+     * 2. Open Alerts Dashboard (ensure we're ready on Incident stack)
+     * 3. Apply UB + Trex stack filter ONCE on Incident for target site
+     * 4. Log stack label + card counts (pre-switch)
+     * 5. If Incident empty → switch to Situation WITHOUT reapplying filter
+     * 6. Log stack label again (capture inversion) + card counts (post-switch)
+     * 7. Run old stable cleanup (no filter reapply, handles SOP/Resolve All POSITIVE, no context closures)
+     * 8. Verify cleanup + log final state
+     * 
+     * KEY CONSTRAINTS:
+     * - Filter applied EXACTLY ONCE (step 3)
+     * - NEVER reapply filter after stack switch or during cleanup
+     * - Use old stable cleanup logic (no page/context closures)
+     * - Log stack label inversion throughout
+     * 
      * @param {string} siteName - Name of the site to clean up (e.g., 'WVRD_9th Ave and JG Strydom Rd_62')
      */
     async ubAndTrexCleanUp(siteName = 'WVRD_9th Ave and JG Strydom Rd_62') {
-        console.log('[WorkflowHelper] Starting UB and Trex cleanup...');
+        console.log('[WorkflowHelper] ========================================');
+        console.log('[WorkflowHelper] UB + TREX CLEANUP - 8-STEP SINGLE-APPLY FLOW');
+        console.log('[WorkflowHelper] Target Site: ' + siteName);
+        console.log('[WorkflowHelper] ========================================');
         
         const alertsDashboardPage = new (await import('./AlertsDashboardPage.js')).AlertsDashboardPage(this.page);
+        let currentStack = 'Incident'; // Track current stack for logging
         
-     //    const Dropdown = this.eventsSituationsDropdown.filter({ hasText: 'Situation' });
-      //  if (await Dropdown.isVisible({ timeout: 5000 })) {
-      //      await Dropdown.click();
-      //     await this.page.waitForLoadState('networkidle');
-      //  }    
-
-        // STEP 1: Always ensure we start with Incident stack first
-        console.log('[WorkflowHelper] Ensuring we start with Incident stack...');
+        // ==========================================
+        // STEP 2: Ensure we're on Alerts Dashboard and on Incident stack
+        // ==========================================
+        console.log('[WorkflowHelper] [STEP 2] Ensuring we start with Incident stack...');
         const incidentDropdown = this.eventsSituationsDropdown.filter({ hasText: 'Situation' });
         if (await incidentDropdown.isVisible({ timeout: 9000 })) {
+            console.log('[WorkflowHelper] [STEP 2] Switching to Incident stack...');
             await incidentDropdown.click();
             await this.page.waitForLoadState('networkidle');
         }
+        console.log('[WorkflowHelper] [STEP 2] ✅ Ready on Incident stack');
 
-        // STEP 2: Process Incident stack (complete flow including filter reset and application)
-        console.log('[WorkflowHelper] ========== Processing INCIDENT stack ==========');
+        // ==========================================
+        // STEP 3: Apply UB + Trex filter ONCE on Incident stack
+        // ==========================================
+        console.log('[WorkflowHelper] [STEP 3] ========================================');
+        console.log('[WorkflowHelper] [STEP 3] Applying UB + Trex filter ONCE on Incident stack');
+        console.log('[WorkflowHelper] [STEP 3] ========================================');
         
-        // Reset alert filter
-        console.log('[WorkflowHelper] Resetting alert filter...');
+        // Reset alert filter first
+        console.log('[WorkflowHelper] [STEP 3] Resetting alert filter...');
         await alertsDashboardPage.resetAlertFilter();
         await this.page.waitForLoadState('networkidle');
 
-        // Apply UB and Trex filter
-        console.log(`[WorkflowHelper] Applying UB and Trex filter for site: ${siteName}...`);
+        // Apply UB and Trex filter - SINGLE APPLICATION
+        console.log(`[WorkflowHelper] [STEP 3] Applying UB and Trex filter for site: ${siteName}...`);
         try {
             await alertsDashboardPage.filterByUBAndTrex(siteName);
-            console.log('[WorkflowHelper] ✅ UB and Trex filter applied successfully');
+            console.log('[WorkflowHelper] [STEP 3] ✅ UB and Trex filter applied successfully');
+            console.log('[WorkflowHelper] [STEP 3] 🔒 SINGLE APPLY CONFIRMED');
             await this.page.waitForLoadState('networkidle');
         } catch (error) {
             const errMessage = error instanceof Error ? error.message : String(error);
-            console.log(`[WorkflowHelper] ⚠️ Failed to apply UB/Trex filter: ${errMessage}`);
-        }        // IMPROVED LOGIC: Enhanced wait for cards to load with better timing for Incident stack
-        
-        // Step 1: Wait for UB/Trex cards or site cards to appear with enhanced timing
-        const aggregatedSiteCards = this.page.locator('[data-test-id="aggregated-site-card"]');
-        const ubTrexAlertCards = this.page.locator('[data-test-id="alert-card"]:has-text("Unusual Behaviour"), [data-test-id="alert-card"]:has-text("Trex")');
-        
-        console.log('[WorkflowHelper] Waiting for UB/Trex cards to appear on Incident stack with enhanced timing...');
-        
-        // Use the reliability helper for consistent waiting
-        try {
-            await this.reliabilityHelper.waitForAlertsToRender('Incident', {
-                minimumWaitTime: 3000,  // 3 seconds minimum for incident stack (reduced from 5000ms)
-                maxWaitTime: 5000,     // 15 seconds maximum
-                checkInterval: 1000     // Check every 1 second
-            });
-            
-            console.log('[WorkflowHelper] Initial alert rendering wait completed for Incident stack');
-        } catch (error) {
-            console.log('[WorkflowHelper] Alert rendering wait completed with warnings for Incident stack');
+            console.log(`[WorkflowHelper] [STEP 3] ⚠️ Failed to apply UB/Trex filter: ${errMessage}`);
         }
         
-        // Step 2: Now count the cards after timeout
+        // CRITICAL: Log confirmation that filter will NOT be reapplied
+        console.log('[WorkflowHelper] [STEP 3] 🔒 FILTER POLICY: Filter applied ONCE.');
+        console.log('[WorkflowHelper] [STEP 3] 🔒 Will NOT reapply after stack switch or during cleanup.');
+        console.log('[WorkflowHelper] [STEP 3] ========================================');
+
+        // ==========================================
+        // STEP 4: Log stack dropdown label and card counts (PRE-SWITCH)
+        // ==========================================
+        console.log('[WorkflowHelper] [STEP 4] ========================================');
+        console.log('[WorkflowHelper] [STEP 4] Logging PRE-SWITCH state on Incident stack');
+        console.log('[WorkflowHelper] [STEP 4] ========================================');
+        
+        // Get current stack dropdown label (will show OPPOSITE stack name due to inversion)
+        const preDropdownLabel = await this.eventsSituationsDropdown.textContent().catch(() => 'Unknown');
+        console.log(`[WorkflowHelper] [STEP 4] 📊 Stack Dropdown Label: "${preDropdownLabel}"`);
+        console.log(`[WorkflowHelper] [STEP 4] 📊 Current Stack: ${currentStack}`);
+        console.log('[WorkflowHelper] [STEP 4] 🔍 Note: Dropdown shows OPPOSITE stack name (label inversion)');
+        
+        // Wait for cards to load
+        await this.page.waitForTimeout(3000);
+        
+        // Count cards
+        const aggregatedSiteCards = this.page.locator('[data-test-id="aggregated-site-card"]');
+        const ubTrexAlertCards = this.page.locator('[data-test-id="alert-card"]:has-text("Unusual Behaviour"), [data-test-id="alert-card"]:has-text("Trex")');
         const siteCardCount = await aggregatedSiteCards.count();
         const ubTrexCardCount = await ubTrexAlertCards.count();
         
-        console.log(`[WorkflowHelper] Found ${siteCardCount} site cards and ${ubTrexCardCount} UB/Trex cards on Incident stack`);
+        console.log(`[WorkflowHelper] [STEP 4] 📊 Site Card Count: ${siteCardCount}`);
+        console.log(`[WorkflowHelper] [STEP 4] 📊 UB/Trex Alert Card Count: ${ubTrexCardCount}`);
         
-        // Step 3: If no cards found after timeout, then check for "No Results Found" text
-        if (siteCardCount === 0 && ubTrexCardCount === 0) {
-            // Use the aggregated-alert-stack container to find the "No Results Found" text more reliably
-            const stackContainer = this.page.locator('[data-test-id="aggregated-alert-stack"]');
-            const noResultsText = stackContainer.locator('text="No Results Found"');
-            const adjustSearchText = stackContainer.locator('text="Please adjust your search to see results"');
+        // Check for "No Results Found"
+        const stackContainer = this.page.locator('[data-test-id="aggregated-alert-stack"]');
+        const noResultsText = stackContainer.locator('text="No Results Found"');
+        const adjustSearchText = stackContainer.locator('text="Please adjust your search to see results"');
+        const incidentHasNoResults = await noResultsText.isVisible({ timeout: 3000 }).catch(() => false) || 
+                                      await adjustSearchText.isVisible({ timeout: 3000 }).catch(() => false);
+        
+        console.log(`[WorkflowHelper] [STEP 4] 📊 "No Results Found" visible: ${incidentHasNoResults}`);
+        console.log('[WorkflowHelper] [STEP 4] ========================================');
+
+        // ==========================================
+        // STEP 5: If Incident empty → switch to Situation WITHOUT reapplying filter
+        // ==========================================
+        let needsCleanup = false;
+        
+        if (siteCardCount === 0 && ubTrexCardCount === 0 && incidentHasNoResults) {
+            console.log('[WorkflowHelper] [STEP 5] ========================================');
+            console.log('[WorkflowHelper] [STEP 5] Incident stack is EMPTY - switching to Situation');
+            console.log('[WorkflowHelper] [STEP 5] 🔒 NO FILTER REAPPLY - using existing filter');
+            console.log('[WorkflowHelper] [STEP 5] ========================================');
             
-            if (await noResultsText.isVisible({ timeout: 3000 }) || await adjustSearchText.isVisible({ timeout: 3000 })) {
-                console.log('[WorkflowHelper] ✅ No UB/Trex cards found and "No Results Found" text detected on Incident stack - skipping Incident cleanup');
+            // Switch to Situation stack
+            const situationDropdown = this.eventsSituationsDropdown.filter({ hasText: 'Incident' });
+            if (await situationDropdown.isVisible({ timeout: 5000 })) {
+                console.log('[WorkflowHelper] [STEP 5] Clicking Situation dropdown...');
+                await situationDropdown.click();
+                await this.page.waitForLoadState('networkidle');
+                currentStack = 'Situation';
+                console.log('[WorkflowHelper] [STEP 5] ✅ Switched to Situation stack (NO FILTER REAPPLY)');
+            }
+            
+            // ==========================================
+            // STEP 6: Log stack label again (capture inversion) + card counts (POST-SWITCH)
+            // ==========================================
+            console.log('[WorkflowHelper] [STEP 6] ========================================');
+            console.log('[WorkflowHelper] [STEP 6] Logging POST-SWITCH state on Situation stack');
+            console.log('[WorkflowHelper] [STEP 6] ========================================');
+            
+            // Wait for Situation stack to render
+            await this.page.waitForTimeout(3000);
+            
+            // Get current stack dropdown label after switch
+            const postDropdownLabel = await this.eventsSituationsDropdown.textContent().catch(() => 'Unknown');
+            console.log(`[WorkflowHelper] [STEP 6] 📊 Stack Dropdown Label: "${postDropdownLabel}"`);
+            console.log(`[WorkflowHelper] [STEP 6] 📊 Current Stack: ${currentStack}`);
+            console.log('[WorkflowHelper] [STEP 6] 🔍 Label Inversion Captured: Dropdown now shows previous stack name');
+            
+            // Count cards on Situation stack
+            const situationSiteCardCount = await aggregatedSiteCards.count();
+            const situationUbTrexCardCount = await ubTrexAlertCards.count();
+            
+            console.log(`[WorkflowHelper] [STEP 6] 📊 Site Card Count: ${situationSiteCardCount}`);
+            console.log(`[WorkflowHelper] [STEP 6] 📊 UB/Trex Alert Card Count: ${situationUbTrexCardCount}`);
+            
+            const situationHasNoResults = await noResultsText.isVisible({ timeout: 3000 }).catch(() => false) || 
+                                           await adjustSearchText.isVisible({ timeout: 3000 }).catch(() => false);
+            
+            console.log(`[WorkflowHelper] [STEP 6] 📊 "No Results Found" visible: ${situationHasNoResults}`);
+            console.log('[WorkflowHelper] [STEP 6] ========================================');
+            
+            // Determine if cleanup is needed on Situation stack
+            if (situationSiteCardCount > 0 || situationUbTrexCardCount > 0) {
+                needsCleanup = true;
+                console.log('[WorkflowHelper] [STEP 6] ✅ Cards found on Situation stack - will proceed with cleanup');
             } else {
-                console.log('[WorkflowHelper] No UB/Trex cards found but no "No Results Found" text either on Incident stack - proceeding with caution');
+                console.log('[WorkflowHelper] [STEP 6] ℹ️ No cards on Situation stack either - nothing to clean');
             }
         } else {
-            // Step 3: Process UB/Trex cards if found - target PARENT card directly
+            console.log('[WorkflowHelper] [STEP 5] ========================================');
+            console.log('[WorkflowHelper] [STEP 5] Incident stack has cards - will clean Incident directly');
+            console.log('[WorkflowHelper] [STEP 5] 🔒 NO STACK SWITCH NEEDED');
+            console.log('[WorkflowHelper] [STEP 5] ========================================');
+            needsCleanup = true;
+        }
+
+        // ==========================================
+        // STEP 7: Run old stable cleanup (no filter reapply, no context closures)
+        // ==========================================
+        if (needsCleanup) {
+            console.log('[WorkflowHelper] [STEP 7] ========================================');
+            console.log(`[WorkflowHelper] [STEP 7] Starting cleanup on ${currentStack} stack`);
+            console.log('[WorkflowHelper] [STEP 7] Using OLD STABLE CLEANUP logic');
+            console.log('[WorkflowHelper] [STEP 7] 🔒 NO FILTER REAPPLY during cleanup');
+            console.log('[WorkflowHelper] [STEP 7] ========================================');
+            
             try {
-                console.log(`[WorkflowHelper] Found cards for site: ${siteName}, proceeding with PARENT card cleanup...`);
+                // Find and select the parent aggregated site card
+                console.log(`[WorkflowHelper] [STEP 7] Looking for site card: ${siteName}...`);
                 
-                // Enhanced site card detection with multiple strategies
                 let parentSiteCard = null;
                 
                 // Strategy 1: Try exact XPath match first
                 try {
                     parentSiteCard = this.page.locator(`//div[@data-test-id="aggregated-site-card" and .//span[contains(text(), "${siteName}")]]`);
                     await parentSiteCard.waitFor({ state: 'visible', timeout: 5000 });
-                    console.log(`[WorkflowHelper] ✅ Found site card using exact XPath for: ${siteName}`);
+                    console.log(`[WorkflowHelper] [STEP 7] ✅ Found site card using exact XPath`);
                 } catch (error) {
-                    const errMessage = error instanceof Error ? error.message : String(error);
-                    console.log(`[WorkflowHelper] XPath strategy failed: ${errMessage}`);
+                    console.log(`[WorkflowHelper] [STEP 7] XPath strategy failed, trying partial name...`);
                 }
                 
                 // Strategy 2: Try partial site name matching if exact fails
                 if (!await parentSiteCard?.isVisible({ timeout: 1000 }).catch(() => false)) {
                     const siteNameParts = siteName.split(' ');
-                    const firstPart = siteNameParts[0]; // e.g., "WVRD_9th"
+                    const firstPart = siteNameParts[0];
                     
                     try {
                         parentSiteCard = this.page.locator(`[data-test-id="aggregated-site-card"]:has-text("${firstPart}")`);
                         await parentSiteCard.waitFor({ state: 'visible', timeout: 5000 });
-                        console.log(`[WorkflowHelper] ✅ Found site card using partial name: ${firstPart}`);
+                        console.log(`[WorkflowHelper] [STEP 7] ✅ Found site card using partial name: ${firstPart}`);
                     } catch (error) {
-                        const errMessage = error instanceof Error ? error.message : String(error);
-                        console.log(`[WorkflowHelper] Partial name strategy failed: ${errMessage}`);
+                        console.log(`[WorkflowHelper] [STEP 7] Partial name strategy failed, using fallback...`);
                     }
                 }
                 
@@ -431,207 +393,157 @@ export class WorkflowHelper {
                     try {
                         parentSiteCard = this.page.locator('[data-test-id="aggregated-site-card"]').first();
                         await parentSiteCard.waitFor({ state: 'visible', timeout: 5000 });
-                        console.log(`[WorkflowHelper] ✅ Found site card using fallback strategy (first available)`);
+                        console.log(`[WorkflowHelper] [STEP 7] ✅ Found site card using fallback strategy`);
                     } catch (error) {
-                        const errMessage = error instanceof Error ? error.message : String(error);
-                        console.log(`[WorkflowHelper] Fallback strategy failed: ${errMessage}`);
+                        throw new Error(`No site card found for cleanup on ${currentStack} stack`);
                     }
                 }
                 
                 // Verify we have a valid card before proceeding
-                if (!parentSiteCard || !await parentSiteCard.isVisible({ timeout: 1000 }).catch(() => false)) {
-                    console.log(`[WorkflowHelper] ❌ No aggregated site card found for ${siteName} on Incident stack`);
-                    throw new Error(`No site card found for cleanup on Incident stack`);
+                if (!parentSiteCard) {
+                    throw new Error(`No site card found for cleanup on ${currentStack} stack`);
                 }
                 
-                // Click on the parent card to select it (but don't expand)
-                console.log(`[WorkflowHelper] Clicking on parent aggregated site card...`);
+                // Click on the parent card to select it
+                console.log(`[WorkflowHelper] [STEP 7] Clicking on parent site card...`);
                 await parentSiteCard.click();
-                console.log('[WorkflowHelper] ✅ Successfully selected parent site card on Incident stack');
-                
+                console.log('[WorkflowHelper] [STEP 7] ✅ Parent site card selected');
                 await this.page.waitForLoadState('networkidle');
                 
                 // Complete SOP if required
+                console.log('[WorkflowHelper] [STEP 7] Completing SOP...');
                 await this.sopPage.completeAndValidateSop();
+                console.log('[WorkflowHelper] [STEP 7] ✅ SOP completed');
 
-                // Click the parent card's dismiss button to dismiss ALL child alerts
-                console.log('[WorkflowHelper] Clicking wrong dismiss button for parent aggregated card...');
-                await this.wrongDismissButton.click({ force: true });
+                // Use appropriate dismiss/resolve method based on stack
+                if (currentStack === 'Incident') {
+                    console.log('[WorkflowHelper] [STEP 7] Dismissing alert on Incident stack...');
+                    await this.wrongDismissButton.click({ force: true });
+                    console.log('[WorkflowHelper] [STEP 7] ✅ Dismiss button clicked');
+                } else {
+                    console.log('[WorkflowHelper] [STEP 7] Resolving alert on Situation stack with explicit choices...');
+                    // Click Resolve All button to open the resolution overlay
+                    console.log('[WorkflowHelper] [STEP 7] Clicking Resolve All to open resolution overlay...');
+                    const resolveAllBtn = this.resolveAllButton;
+                    if (await resolveAllBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+                        await resolveAllBtn.click({ force: true });
+                        console.log('[WorkflowHelper] [STEP 7] ✅ Clicked Resolve All button');
+                    } else {
+                        const fallback = this.resolveAllButtonFallback;
+                        if (await fallback.isVisible({ timeout: 2000 }).catch(() => false)) {
+                            await fallback.click({ force: true });
+                            console.log('[WorkflowHelper] [STEP 7] ✅ Clicked Resolve All button (fallback)');
+                        } else {
+                            console.log('[WorkflowHelper] [STEP 7] ❌ Resolve All button not found');
+                            try {
+                                const screenshotPath = `debug/resolve-all-missing-${Date.now()}.png`;
+                                await this.page.screenshot({ path: screenshotPath, fullPage: true });
+                                console.log(`[WorkflowHelper] [STEP 7] Saved screenshot: ${screenshotPath}`);
+                            } catch {}
+                        }
+                    }
+                    
+                    // Wait briefly for overlay to appear, then run explicit sequence
+                    await this.page.waitForTimeout(800);
+                    console.log('[WorkflowHelper] [STEP 7] Running UB/Trex explicit button sequence...');
+                    await this._resolveUbTrexExplicitSequence();
+                    console.log('[WorkflowHelper] [STEP 7] ✅ Resolution completed');
+                }
+                
                 await this.page.waitForLoadState('networkidle');
                 
-                // CRITICAL: Wait for the alert to be removed and verify "No Results Found" appears
-                console.log('[WorkflowHelper] Waiting for alert to be dismissed and "No Results Found" to appear...');
-                await this.page.waitForTimeout(2000); // Give time for UI to update
-                
-                // Check if the alert was actually removed by looking for "No Results Found"
-                const stackContainer = this.page.locator('[data-test-id="aggregated-alert-stack"]');
-                const noResultsText = stackContainer.locator('text="No Results Found"');
-                const adjustSearchText = stackContainer.locator('text="Please adjust your search to see results"');
+                // Verify alert was cleaned up
+                console.log('[WorkflowHelper] [STEP 7] Verifying cleanup...');
+                await this.page.waitForTimeout(2000);
                 
                 let verificationAttempts = 0;
                 const maxVerificationAttempts = 5;
-                let alertDismissed = false;
+                let alertCleanedUp = false;
                 
-                while (!alertDismissed && verificationAttempts < maxVerificationAttempts) {
+                while (!alertCleanedUp && verificationAttempts < maxVerificationAttempts) {
                     verificationAttempts++;
-                    console.log(`[WorkflowHelper] Verification attempt ${verificationAttempts}/${maxVerificationAttempts} - checking if alert was dismissed...`);
+                    console.log(`[WorkflowHelper] [STEP 7] Verification attempt ${verificationAttempts}/${maxVerificationAttempts}...`);
                     
                     // Check if "No Results Found" text is now visible
                     if (await noResultsText.isVisible({ timeout: 2000 }) || await adjustSearchText.isVisible({ timeout: 2000 })) {
-                        alertDismissed = true;
-                        console.log('[WorkflowHelper] ✅ Alert successfully dismissed - "No Results Found" text confirmed');
+                        alertCleanedUp = true;
+                        console.log('[WorkflowHelper] [STEP 7] ✅ Alert cleaned up - "No Results Found" confirmed');
                     } else {
                         // Check if there are still cards present
                         const remainingCards = await this.page.locator('[data-test-id="aggregated-site-card"]').count();
                         if (remainingCards === 0) {
-                            alertDismissed = true;
-                            console.log('[WorkflowHelper] ✅ Alert successfully dismissed - no cards remaining');
+                            alertCleanedUp = true;
+                            console.log('[WorkflowHelper] [STEP 7] ✅ Alert cleaned up - no cards remaining');
                         } else {
-                            console.log(`[WorkflowHelper] Alert still present (${remainingCards} cards remaining), waiting...`);
+                            console.log(`[WorkflowHelper] [STEP 7] Alert still present (${remainingCards} cards), waiting...`);
                             await this.page.waitForTimeout(1000);
                         }
                     }
                 }
                 
-                if (!alertDismissed) {
-                    console.warn('[WorkflowHelper] ⚠️ Alert may not have been properly dismissed after maximum attempts');
+                if (!alertCleanedUp) {
+                    console.warn('[WorkflowHelper] [STEP 7] ⚠️ Alert may not have been fully cleaned up');
+                    // Enforce failure for Situation stack per new requirement
+                    if (currentStack === 'Situation') {
+                        console.log('[WorkflowHelper] [STEP 7] Enforcing empty stack requirement (Situation)');
+                        await this._assertStackEmpty('Situation', 'post-resolution verification loop incomplete');
+                    }
                 } else {
-                    console.log('[WorkflowHelper] ✅ UB/Trex Incident stack cleanup completed and verified');
-                }
-                
-            } catch (error) {
-                const errMessage = error instanceof Error ? error.message : String(error);
-                console.log(`[WorkflowHelper] ⚠️ Error processing UB/Trex cards on Incident stack: ${errMessage}`);
-            }
-        }        // STEP 3: Switch to Situation stack and process with enhanced timing
-        console.log('[WorkflowHelper] ========== Processing SITUATION stack ==========');
-        const situationDropdown = this.eventsSituationsDropdown.filter({ hasText: 'Incident' });
-        if (await situationDropdown.isVisible({ timeout: 5000 })) {
-            console.log('[WorkflowHelper] Switching to Situation stack...');
-            await situationDropdown.click();
-            
-            // Use enhanced stack switching with proper alert rendering wait
-            await this.reliabilityHelper.switchStackWithAlertsWait('Situation', {
-                waitAfterSwitch: 3000, // 3 seconds minimum wait for UB/Trex alerts to render
-                retryCount: 2
-            });
-        } else {
-            // Even if dropdown not found, ensure alerts have time to render
-            console.log('[WorkflowHelper] Dropdown not found, ensuring alerts have time to render...');
-            await this.reliabilityHelper.waitForAlertsToRender('Situation', {
-                minimumWaitTime: 3000, // 3 seconds minimum for situation stack (reduced from 8000ms)
-                maxWaitTime: 20000
-            });
-        }        // IMPROVED LOGIC: Enhanced wait for cards to load with extended timeout for Situation stack
-        
-        // Step 1: Extended wait for UB/Trex cards or site cards to appear on Situation stack
-        const situationSiteCards = this.page.locator('[data-test-id="aggregated-site-card"]');
-        const situationUbTrexCards = this.page.locator('[data-test-id="alert-card"]:has-text("Unusual Behaviour"), [data-test-id="alert-card"]:has-text("Trex")');
-        
-        console.log('[WorkflowHelper] Waiting for UB/Trex cards to appear on Situation stack with enhanced timing...');
-        
-        // Use the reliability helper's enhanced waiting mechanism
-        try {
-            await this.reliabilityHelper.waitForAlertsToRender('Situation', {
-                minimumWaitTime: 3000,  // 3 seconds minimum for situation stack (reduced from 6000ms)
-                maxWaitTime: 18000,     // 18 seconds maximum
-                checkInterval: 1500     // Check every 1.5 seconds
-            });
-            
-            // Additional check for specific UB/Trex cards after general alert wait
-            await Promise.race([
-                situationUbTrexCards.first().waitFor({ state: 'visible', timeout: 3000 }),
-                situationSiteCards.first().waitFor({ state: 'visible', timeout: 3000 })
-            ]);
-            console.log('[WorkflowHelper] Cards detected on Situation stack after enhanced wait');
-        } catch (error) {
-            console.log('[WorkflowHelper] No cards appeared within enhanced timeout on Situation stack');
-        }
-        
-        // Step 2: Now count the cards after timeout
-        const situationSiteCardCount = await situationSiteCards.count();
-        const situationUbTrexCardCount = await situationUbTrexCards.count();
-        
-        console.log(`[WorkflowHelper] Found ${situationSiteCardCount} site cards and ${situationUbTrexCardCount} UB/Trex cards on Situation stack`);
-        
-        // Step 3: If no cards found after timeout, then check for "No Results Found" text
-        if (situationSiteCardCount === 0 && situationUbTrexCardCount === 0) {
-            // Use the aggregated-alert-stack container to find the "No Results Found" text more reliably
-            const situationStackContainer = this.page.locator('[data-test-id="aggregated-alert-stack"]');
-            const situationNoResultsText = situationStackContainer.locator('text="No Results Found"');
-            const situationAdjustSearchText = situationStackContainer.locator('text="Please adjust your search to see results"');
-            
-            if (await situationNoResultsText.isVisible({ timeout: 3000 }) || await situationAdjustSearchText.isVisible({ timeout: 3000 })) {
-                console.log('[WorkflowHelper] ✅ No UB/Trex cards found and "No Results Found" text detected on Situation stack - cleanup completed');
-            } else {
-                console.log('[WorkflowHelper] No UB/Trex cards found but no "No Results Found" text either on Situation stack - proceeding with caution');
-            }
-        } else {
-            // Step 3: Process UB/Trex cards if found
-            try {
-                await alertsDashboardPage.expandAndSelectUBAndTrexCard(siteName);
-                console.log('[WorkflowHelper] ✅ Successfully selected UB/Trex alert card on Situation stack');
-                await this.page.waitForLoadState('networkidle');
-                
-                await this.sopPage.completeAndValidateSop();
-                
-                console.log('[WorkflowHelper] Clicking RESOLVE ALL button for UB/Trex...');
-                await this.resolveAllButton.click({ force: true });
-                await this.page.waitForLoadState('networkidle');
-                
-                // Select resolution categories for Situation stack
-                console.log('[WorkflowHelper] Using dynamic 3-menu first-option selection and Resolve...');
-                await this._dynamicSelectFirstOptionsAndResolve();
-                
-                // CRITICAL: Wait for the alert to be resolved and verify "No Results Found" appears
-                console.log('[WorkflowHelper] Waiting for alert to be resolved and "No Results Found" to appear...');
-                await this.page.waitForTimeout(2000); // Give time for UI to update
-                
-                // Check if the alert was actually resolved by looking for "No Results Found"
-                const situationStackContainer = this.page.locator('[data-test-id="aggregated-alert-stack"]');
-                const situationNoResultsText = situationStackContainer.locator('text="No Results Found"');
-                const situationAdjustSearchText = situationStackContainer.locator('text="Please adjust your search to see results"');
-                
-                let situationVerificationAttempts = 0;
-                const maxSituationVerificationAttempts = 5;
-                let situationAlertResolved = false;
-                
-                while (!situationAlertResolved && situationVerificationAttempts < maxSituationVerificationAttempts) {
-                    situationVerificationAttempts++;
-                    console.log(`[WorkflowHelper] Situation verification attempt ${situationVerificationAttempts}/${maxSituationVerificationAttempts} - checking if alert was resolved...`);
-                    
-                    // Check if "No Results Found" text is now visible
-                    if (await situationNoResultsText.isVisible({ timeout: 2000 }) || await situationAdjustSearchText.isVisible({ timeout: 2000 })) {
-                        situationAlertResolved = true;
-                        console.log('[WorkflowHelper] ✅ Alert successfully resolved - "No Results Found" text confirmed');
-                    } else {
-                        // Check if there are still cards present
-                        const remainingSituationCards = await this.page.locator('[data-test-id="aggregated-site-card"]').count();
-                        if (remainingSituationCards === 0) {
-                            situationAlertResolved = true;
-                            console.log('[WorkflowHelper] ✅ Alert successfully resolved - no cards remaining');
-                        } else {
-                            console.log(`[WorkflowHelper] Alert still present (${remainingSituationCards} cards remaining), waiting...`);
-                            await this.page.waitForTimeout(1000);
-                        }
+                    console.log(`[WorkflowHelper] [STEP 7] ✅ Cleanup completed on ${currentStack} stack`);
+                    // Assert final emptiness strictly if Situation
+                    if (currentStack === 'Situation') {
+                        await this._assertStackEmpty('Situation', 'successful resolution');
                     }
                 }
                 
-                if (!situationAlertResolved) {
-                    console.warn('[WorkflowHelper] ⚠️ Alert may not have been properly resolved after maximum attempts');
-                } else {
-                    console.log('[WorkflowHelper] ✅ UB/Trex Situation stack cleanup completed and verified');
-                }
-                
             } catch (error) {
                 const errMessage = error instanceof Error ? error.message : String(error);
-                console.log(`[WorkflowHelper] ⚠️ Error processing UB/Trex cards on Situation stack: ${errMessage}`);
+                console.log(`[WorkflowHelper] [STEP 7] ❌ Error during cleanup on ${currentStack} stack: ${errMessage}`);
+                throw error;
             }
+        } else {
+            console.log('[WorkflowHelper] [STEP 7] ℹ️ No cleanup needed - both stacks are empty');
         }
-          // Final assertion: ensure no UB/Trex alerts remain for the site on BOTH stacks
-          await this._assertNoUbTrexAlertsRemaining(siteName);
 
-          console.log('[WorkflowHelper] UB and Trex cleanup completed');
+        // ==========================================
+        // STEP 8: Verify cleanup + log final state
+        // ==========================================
+        console.log('[WorkflowHelper] [STEP 8] ========================================');
+        console.log('[WorkflowHelper] [STEP 8] Final verification and summary');
+        console.log('[WorkflowHelper] [STEP 8] ========================================');
+        
+        // Log final stack label
+        const finalDropdownLabel = await this.eventsSituationsDropdown.textContent().catch(() => 'Unknown');
+        console.log(`[WorkflowHelper] [STEP 8] 📊 Final Stack Dropdown Label: "${finalDropdownLabel}"`);
+        console.log(`[WorkflowHelper] [STEP 8] 📊 Final Stack: ${currentStack}`);
+        
+        // Log final card counts
+        const finalSiteCardCount = await aggregatedSiteCards.count();
+        const finalUbTrexCardCount = await ubTrexAlertCards.count();
+        console.log(`[WorkflowHelper] [STEP 8] 📊 Final Site Card Count: ${finalSiteCardCount}`);
+        console.log(`[WorkflowHelper] [STEP 8] 📊 Final UB/Trex Alert Card Count: ${finalUbTrexCardCount}`);
+        // Enforce final empty state if we operated on Situation stack
+        if (currentStack === 'Situation') {
+            try {
+                await this._assertStackEmpty('Situation', 'final summary check');
+            } catch (e) {
+                console.log('[WorkflowHelper] [STEP 8] ❌ Final empty-state assertion failed:', (/** @type {any} */(e)).message || e);
+                throw e; // propagate failure to fail test
+            }
+        }
+        
+        // Summary
+        console.log('[WorkflowHelper] [STEP 8] ========================================');
+        console.log('[WorkflowHelper] [STEP 8] 🎉 CLEANUP SUMMARY:');
+        console.log(`[WorkflowHelper] [STEP 8]   ✓ Filter applied: ONCE on Incident stack`);
+        console.log(`[WorkflowHelper] [STEP 8]   ✓ Filter reapplied: NEVER`);
+        console.log(`[WorkflowHelper] [STEP 8]   ✓ Cleanup performed on: ${currentStack} stack`);
+        console.log(`[WorkflowHelper] [STEP 8]   ✓ Stack label inversion: Logged throughout`);
+    console.log(`[WorkflowHelper] [STEP 8]   ✓ Final state: ${finalSiteCardCount + finalUbTrexCardCount} cards remaining (must be 0 on Situation)`);
+        console.log('[WorkflowHelper] [STEP 8] ========================================');
+        
+        console.log('[WorkflowHelper] ✅ UB and Trex cleanup completed successfully');
+        console.log('[WorkflowHelper] ========================================');
     }
 
     /**
@@ -643,9 +555,6 @@ export class WorkflowHelper {
         // So when we want Incident, we click the button that contains text "Situation"
         const targetLabel = stackType === 'Incident' ? 'Situation' : 'Incident';
         const dropdown = this.eventsSituationsDropdown.filter({ hasText: targetLabel });
-
-        // Ensure no lingering overlays before trying to click
-        await this._ensureNoModalOrOverlay({ timeoutMs: 8000 }).catch(() => {});
 
         if (await dropdown.isVisible({ timeout: 5000 }).catch(() => false)) {
             // Try up to 3 times in case of intercepted clicks
@@ -663,7 +572,6 @@ export class WorkflowHelper {
                 } catch (err) {
                     const msg = err instanceof Error ? err.message : String(err);
                     console.log(`[WorkflowHelper] Retry ${attempt}/3 switching to ${stackType} due to: ${msg}`);
-                    await this._ensureNoModalOrOverlay({ timeoutMs: 3000 }).catch(() => {});
                     await this.page.waitForTimeout(300);
                 }
             }
@@ -672,61 +580,189 @@ export class WorkflowHelper {
     }
 
     /**
-     * Internal: Assert that no UB/Trex alerts remain for the given site on BOTH stacks.
-     * Throws if any matching cards remain after cleanup.
-     * @param {string} siteName
+     * Assert current stack is empty for UB/Trex target after cleanup.
+     * Fails test if any aggregated-site-card or UB/Trex card remains; attaches screenshot path.
+     * @param {'Incident'|'Situation'} stackType
+     * @param {string} [reason]
      */
-    async _assertNoUbTrexAlertsRemaining(siteName) {
-        const AlertsDashboardPage = (await import('./AlertsDashboardPage.js')).AlertsDashboardPage;
-        const alertsDashboardPage = new AlertsDashboardPage(this.page);
+    async _assertStackEmpty(stackType, reason) {
+        const stackContainer = this.page.locator('[data-test-id="aggregated-alert-stack"]');
+        const noResultsText = stackContainer.locator('text="No Results Found"');
+        const adjustSearchText = stackContainer.locator('text="Please adjust your search to see results"');
+        const cards = this.page.locator('[data-test-id="aggregated-site-card"], [data-test-id="alert-card"]');
 
-    /** @type {Array<'Incident'|'Situation'>} */
-    const stacks = ['Incident', 'Situation'];
-    for (const stack of stacks) {
-            console.log(`[WorkflowHelper] Verifying no remaining UB/Trex alerts on ${stack} stack for site: ${siteName}`);
-            await this._switchToStack(stack);
+        // small grace wait for UI to settle
+        await this.page.waitForTimeout(1000);
 
-            // Re-apply strict filter by site + UB/Trex to limit to target site
-            try {
-                await alertsDashboardPage.filterByUBAndTrex(siteName);
-            } catch (e) {
-                const msg = e instanceof Error ? e.message : String(e);
-                console.log(`[WorkflowHelper] Filter apply warning on ${stack} stack:`, msg);
-            }
+        const [hasNoResults, hasAdjust, cardCount] = await Promise.all([
+            noResultsText.isVisible().catch(() => false),
+            adjustSearchText.isVisible().catch(() => false),
+            cards.count()
+        ]);
 
-            // Give a brief moment for results to settle
-            await this.page.waitForTimeout(1000);
-
-            const siteCards = this.page.locator('[data-test-id="aggregated-site-card"]');
-            const ubTrexCards = this.page.locator('[data-test-id="alert-card"]:has-text("Unusual Behaviour"), [data-test-id="alert-card"]:has-text("Trex")');
-
-            const [siteCardCount, ubTrexCardCount] = await Promise.all([
-                siteCards.count(),
-                ubTrexCards.count()
-            ]);
-
-            const noResultsVisible = await this.page.getByText('No Results Found').isVisible().catch(() => false);
-
-            // Consider cleanup failed only if UB/Trex cards remain; ignore presence of site group if it has no UB/Trex
-            if (ubTrexCardCount > 0) {
-                // Cards still present -> fail the test with clear context
-                const screenshotPath = `debug/cleanup-unresolved-${stack}-${Date.now()}.png`;
-                try { await this.page.screenshot({ path: screenshotPath, fullPage: true }); } catch {}
-                throw new Error(`UB/Trex cleanup failed on ${stack} stack for site "${siteName}". ` +
-                    `Remaining ubTrexCards=${ubTrexCardCount}. siteCards=${siteCardCount}. ` +
-                    `Screenshot: ${screenshotPath}`);
-            }
-
-            if (siteCardCount > 0 && ubTrexCardCount === 0) {
-                console.log(`[WorkflowHelper] Site group present on ${stack} but no UB/Trex cards remain (acceptable).`);
-            }
-
-            if (!noResultsVisible) {
-                // Even when count is 0, we expect explicit empty-state; warn but don't fail
-                console.log(`[WorkflowHelper] No cards found on ${stack} stack; empty-state text not visible (non-fatal).`);
-            }
-
-            console.log(`[WorkflowHelper] ✅ No remaining UB/Trex alerts on ${stack} stack for site: ${siteName}`);
+        if ((hasNoResults || hasAdjust) && cardCount === 0) {
+            console.log(`[WorkflowHelper] ✅ ${stackType} stack is empty${reason ? ` (${reason})` : ''}`);
+            return;
         }
+
+        const screenshotPath = `debug/stack-not-empty-${stackType}-${Date.now()}.png`;
+        try { await this.page.screenshot({ path: screenshotPath, fullPage: true }); } catch {}
+        throw new Error(`${stackType} stack not empty after cleanup${reason ? ` (${reason})` : ''}. ` +
+            `noResults=${hasNoResults}, adjust=${hasAdjust}, cardCount=${cardCount}. Screenshot: ${screenshotPath}`);
+    }
+
+    /**
+     * Explicit UB/Trex resolution sequence for Situation stack.
+     * Order: Infrastructure (skip if missing) -> Attempted entry -> Arrest -> Resolve.
+     * Works entirely inside the react-aria overlay without fallback logic.
+     */
+    async _resolveUbTrexExplicitSequence() {
+        console.log('[WorkflowHelper] UB/Trex explicit resolve sequence starting');
+
+        // Wait for overlay to appear after Resolve All click
+        await this.page.waitForTimeout(1500);
+        
+        // Try multiple overlay detection strategies
+        let active = null;
+        const overlay = this.page.locator('.react-aria-ModalOverlay').first();
+        if (await overlay.isVisible().catch(() => false)) {
+            active = overlay;
+            console.log('[WorkflowHelper] ✅ Found react-aria-ModalOverlay');
+        } else {
+            const anyOverlay = this.page.locator('[class*="ModalOverlay"]').first();
+            if (await anyOverlay.isVisible().catch(() => false)) {
+                active = anyOverlay;
+                console.log('[WorkflowHelper] ✅ Found ModalOverlay');
+            } else {
+                const dialog = this.page.locator('[role="dialog"]').first();
+                if (await dialog.isVisible().catch(() => false)) {
+                    active = dialog;
+                    console.log('[WorkflowHelper] ✅ Found dialog');
+                } else {
+                    // Last resort: use page as container
+                    active = this.page;
+                    console.log('[WorkflowHelper] ⚠️ Overlay not found, using page as container');
+                }
+            }
+        }
+
+        console.log('[WorkflowHelper] Starting button click sequence...');
+
+        /**
+         * Click button by label using EXACT structure match for the specific DOM pattern:
+         * button > .content-wrapper > .text-content > p.main-text
+         * @param {string} label
+         */
+        const clickByStructure = async (label) => {
+            // Strategy 1: Most specific - button > div.content-wrapper > div.text-content > p.main-text with exact text
+            const exactStructure = active.locator(`button >> div.content-wrapper >> div.text-content >> p.main-text:text("${label}")`).first();
+            if (await exactStructure.isVisible({ timeout: 2000 }).catch(() => false)) {
+                const btn = exactStructure.locator('xpath=ancestor::button[1]').first();
+                if (await btn.isVisible().catch(() => false)) {
+                    await btn.click({ force: true });
+                    console.log(`[WorkflowHelper] ✅ Clicked "${label}" (exact structure via ancestor)`);
+                    return true;
+                }
+            }
+
+            // Strategy 2: Structural - button containing p.main-text with the label
+            const structuralBtn = active.locator(`button:has(p.main-text:has-text("${label}"))`).first();
+            if (await structuralBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                await structuralBtn.click({ force: true });
+                console.log(`[WorkflowHelper] ✅ Clicked "${label}" (structural p.main-text)`);
+                return true;
+            }
+
+            // Strategy 3: Generic button with exact text match
+            const textBtn = active.locator(`button:has-text("${label}")`).first();
+            if (await textBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+                await textBtn.click({ force: true });
+                console.log(`[WorkflowHelper] ✅ Clicked "${label}" (has-text)`);
+                return true;
+            }
+
+            // Strategy 4: Role-based with flexible whitespace matching
+            const roleBtn = active.getByRole('button', { name: new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i') }).first();
+            if (await roleBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+                await roleBtn.click({ force: true });
+                console.log(`[WorkflowHelper] ✅ Clicked "${label}" (role)`);
+                return true;
+            }
+
+            console.log(`[WorkflowHelper] ⚠️ Could not find button with label "${label}"`);
+            return false;
+        };
+
+        // Step 1: Infrastructure (optional - skip if not found per user requirement)
+        console.log('[WorkflowHelper] [STEP 1] Attempting to click "Infrastructure" (optional)...');
+        const infraClicked = await clickByStructure('Infrastructure');
+        if (infraClicked) {
+            console.log('[WorkflowHelper] [STEP 1] ✅ "Infrastructure" clicked successfully');
+            await this.page.waitForTimeout(400);
+        } else {
+            console.log('[WorkflowHelper] [STEP 1] ⏭️ "Infrastructure" not found - SKIPPING (allowed per requirements)');
+            // No wait timeout needed when skipping
+        }
+
+        // Step 2: Attempted entry (required)
+        console.log('[WorkflowHelper] [STEP 2] Attempting to click "Attempted entry" (required)...');
+        if (!await clickByStructure('Attempted entry')) {
+            console.log('[WorkflowHelper] [STEP 2] ❌ Could not click "Attempted entry" - taking screenshot');
+            try {
+                await this.page.screenshot({ path: `debug/attempted-entry-missing-${Date.now()}.png`, fullPage: true });
+            } catch {}
+            return; // Graceful abort; test will fail on remaining cards later
+        }
+        console.log('[WorkflowHelper] [STEP 2] ✅ "Attempted entry" clicked successfully');
+        await this.page.waitForTimeout(400);
+
+        // Step 3: Arrest (required)
+        console.log('[WorkflowHelper] [STEP 3] Attempting to click "Arrest" (required)...');
+        if (!await clickByStructure('Arrest')) {
+            console.log('[WorkflowHelper] [STEP 3] ❌ Could not click "Arrest" - taking screenshot');
+            try {
+                await this.page.screenshot({ path: `debug/arrest-missing-${Date.now()}.png`, fullPage: true });
+            } catch {}
+            return;
+        }
+        console.log('[WorkflowHelper] [STEP 3] ✅ "Arrest" clicked successfully');
+        await this.page.waitForTimeout(400);
+
+        // Final: Resolve button
+        console.log('[WorkflowHelper] [FINAL STEP] Attempting to click final "Resolve" button...');
+        const resolveBtn = active.getByRole('button', { name: /^Resolve$/i }).first();
+        if (await resolveBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+            // Wait for it to be enabled
+            try { 
+                await expect(resolveBtn).toBeEnabled({ timeout: 4000 }); 
+            } catch {
+                console.log('[WorkflowHelper] Resolve button not enabled yet, proceeding anyway...');
+            }
+            await resolveBtn.click({ force: true });
+            console.log('[WorkflowHelper] ✅ Clicked Resolve button');
+        } else {
+            const resolveFallback = active.locator('button:has-text("Resolve")').first();
+            if (await resolveFallback.isVisible({ timeout: 1000 }).catch(() => false)) {
+                await resolveFallback.click({ force: true });
+                console.log('[WorkflowHelper] ✅ Clicked Resolve button (fallback)');
+            } else {
+                console.log('[WorkflowHelper] ❌ Resolve button not found - taking screenshot');
+                try {
+                    await this.page.screenshot({ path: `debug/resolve-button-missing-${Date.now()}.png`, fullPage: true });
+                } catch {}
+                return;
+            }
+        }
+
+        // Allow overlay to close (do NOT forcibly dismiss)
+        console.log('[WorkflowHelper] Waiting for overlay to close after resolution...');
+        if (active !== this.page && 'waitFor' in active) {
+            await active.waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {
+                console.log('[WorkflowHelper] ⚠️ Overlay did not close within 15s (may still be processing)');
+            });
+        } else {
+            await this.page.waitForTimeout(2000);
+        }
+        console.log('[WorkflowHelper] UB/Trex explicit resolve sequence finished');
     }
 }

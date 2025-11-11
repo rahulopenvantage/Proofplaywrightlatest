@@ -20,7 +20,9 @@ export class CompanyManagementPage {
     this.saveAndUpdateBtn = page.locator('[data-test-id="company-management-UPDATE-company"]');
     this.searchToggleBtn = page.locator('[data-test-id="search-toggle"]');
     this.searchInput = page.locator('[data-test-id="search-input"]');
+    /** @param {string} companyName */
     this.editBtn = (companyName) => page.locator(`tbody tr:has(td:nth-of-type(3):text-is("${companyName}")) [data-test-id="company-edit-btn"]`);
+    /** @param {string} companyName */
     this.archiveBtn = (companyName) => page.locator(`tbody tr:has(td:nth-of-type(3):text-is("${companyName}")) [data-test-id="company-archive-btn"]`);
     this.confirmCheckboxDiv = page.locator('div[role="dialog"] .checkbox-container');
     this.archiveYesBtn = page.locator('div[role="dialog"] button:has-text("Yes")');
@@ -44,6 +46,11 @@ export class CompanyManagementPage {
 
   /**
    * Fills out the company creation form - Fixed dropdown handling
+   * @param {Object} formData
+   * @param {string} formData.companyName
+   * @param {string} formData.registrationNumber
+   * @param {string} formData.email
+   * @param {string} formData.contactPerson
    */
   async fillCompanyForm({ companyName, registrationNumber, email, contactPerson }) {
     console.log(`[CompanyManagement] Filling company form: ${companyName}`);
@@ -70,11 +77,14 @@ export class CompanyManagementPage {
   async switchToConfigTab() {
     console.log('[CompanyManagement] Switching to Company Configuration tab...');
     await this.page.locator('[data-test-id="company-management-company-configuration"]').click();
-    await expect(this.page.locator('h1:has-text("Company configuration")')).toBeVisible();
+    await expect(this.page.getByText('Company configuration')).toBeVisible();
   }
 
   /**
    * Fills out the configuration fields
+   * @param {Object} configData
+   * @param {string} configData.milestoneUsername
+   * @param {string} configData.telegramNumber
    */
   async fillConfigFields({ milestoneUsername, telegramNumber }) {
     console.log('[CompanyManagement] Filling configuration fields...');
@@ -94,6 +104,7 @@ export class CompanyManagementPage {
 
   /**
    * Searches for a company by name
+   * @param {string} name
    */
   async searchCompany(name) {
     console.log(`[CompanyManagement] Searching for company: ${name}`);
@@ -106,6 +117,8 @@ export class CompanyManagementPage {
 
   /**
    * Edits the contact person for a company
+   * @param {string} companyName
+   * @param {string} newContactPerson
    */
   async editContactPerson(companyName, newContactPerson) {
     console.log(`[CompanyManagement] Editing contact person for: ${companyName}`);
@@ -118,6 +131,8 @@ export class CompanyManagementPage {
 
   /**
    * Validates the contact person in the table
+   * @param {string} companyName
+   * @param {string} expectedContactPerson
    */
   async expectContactPerson(companyName, expectedContactPerson) {
     const contactPersonCell = this.page.locator(`tbody tr:has(td:nth-of-type(3):text-is("${companyName}")) td:nth-of-type(1)`);
@@ -126,6 +141,7 @@ export class CompanyManagementPage {
 
   /**
    * Archives a company by name
+   * @param {string} companyName
    */
   async archiveCompany(companyName) {
     console.log(`[CompanyManagement] Archiving company: ${companyName}`);

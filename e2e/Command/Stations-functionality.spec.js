@@ -73,6 +73,8 @@ test.describe('Dashboard - Stations functionality', () => {
         // Step 12: Generic Manual alert stack filter
         console.log('[Stations Functionality] Step 12: Generic Manual alert stack filter');
         await sharedSteps.genericManualAlertStackFilter();
+        await page.waitForLoadState('networkidle');
+        await page.waitForTimeout(3000); // Wait for filter results to load
         
         // Step 13: Verify that the element card_aggregate_ManualAlert is DISPLAYED
         console.log('[Stations Functionality] Step 13: Verify manual alert card is displayed');
