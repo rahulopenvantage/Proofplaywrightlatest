@@ -10,6 +10,7 @@ const ADMIN_USERNAME = process.env.ADMIN_MS_USERNAME;
 const ADMIN_PASSWORD = process.env.ADMIN_MS_PASSWORD;
 
 test.describe('Dashboard - Stations functionality', () => {
+    /** @type {SharedTestSteps} */
     let sharedSteps;
     
     test.beforeEach(async ({ page }) => {
@@ -23,6 +24,13 @@ test.describe('Dashboard - Stations functionality', () => {
             throw new Error('NORMAL_MS_USERNAME, NORMAL_MS_PASSWORD, ADMIN_MS_USERNAME and ADMIN_MS_PASSWORD environment variables must be set.');
         }
         
+         await page.goto('https://uat.proof360.io/');
+         await sharedSteps.authenticateAndSetup(ADMIN_USERNAME, ADMIN_PASSWORD);
+
+        // Logout first to ensure clean state, then login with normal user
+        console.log('[Stations Functionality] Logging out to switch to normal user...');
+        await sharedSteps.logout();
+        
         // Switch to normal user for this test
         console.log('[Stations Functionality] Switching to normal user...');
         await sharedSteps.switchToNormalUser(NORMAL_USERNAME, NORMAL_PASSWORD);
@@ -31,32 +39,40 @@ test.describe('Dashboard - Stations functionality', () => {
     test('should verify stations dropdown and filtering functionality', async ({ page }) => {
         console.log('[Stations Functionality] Starting test flow...');
         
-        // Step 1: Admin Login and Navigate to Command Dashboard
-        console.log('[Stations Functionality] Step 1: Normal user already logged in from beforeEach');
+        // Step 2: Normal user already logged in from beforeEach
+        console.log('[Stations Functionality] Step 2: Normal user already logged in from beforeEach');
         // Normal user is already logged in from beforeEach
         // Step 3: Click on Station DropDown - ALL
         console.log('[Stations Functionality] Step 3: Click on Station DropDown - ALL');
         await sharedSteps.changeStationToAll();
         await page.waitForLoadState('networkidle');
         
-        // Step 4: Verify if image "All Test image on stations.png" present in current-page
-        console.log('[Stations Functionality] Step 4: Verify ALL station image');
-      //  const stationDropdownALL = page.locator('[data-test-id="station-dropdown"]');
-        //await expect(stationDropdownALL).toHaveScreenshot('all-test-image-on-stations.png');
+        // Step 4: Verify station dropdown shows "ALL"
+        console.log('[Stations Functionality] Step 4: Verify ALL station is selected');
+        const stationDropdownALL = page.locator('[data-test-id="stationDropDown"]');
+        await expect(stationDropdownALL).toContainText('ALL');
+        console.log('[Stations Functionality] ✅ Station dropdown shows ALL');
         
         // Step 5: Mouseover the element Linked Areas Icon
         console.log('[Stations Functionality] Step 5: Mouseover Linked Areas Icon');
         const linkedAreasIcon = page.locator('[data-test-id="linkedAreasIcon"]');
         await linkedAreasIcon.hover();
         
-        // Step 6: Verify if image "ALL for Station dropdown.png" present in current-page
-        console.log('[Stations Functionality] Step 6: Verify ALL station dropdown image');
-      //  await expect(stationDropdownALL).toHaveScreenshot('all-for-station-dropdown.png');
+        // Step 6: Verify station dropdown still shows "ALL" after hover
+        console.log('[Stations Functionality] Step 6: Verify ALL station dropdown after hover');
+        await expect(stationDropdownALL).toContainText('ALL');
+        console.log('[Stations Functionality] ✅ Station dropdown still shows ALL after hover');
         
         // Step 8: Click on Automation test station
         console.log('[Stations Functionality] Step 8: Click on Automation test station');
         await sharedSteps.changeStationToAutomationTest();
         await page.waitForLoadState('networkidle');
+        
+        // Step 8a: Verify station dropdown shows "Automation test"
+        console.log('[Stations Functionality] Step 8a: Verify Automation test station is selected');
+        const stationDropdown = page.locator('[data-test-id="stationDropDown"]');
+        await expect(stationDropdown).toContainText('Automation test');
+        console.log('[Stations Functionality] ✅ Station dropdown shows Automation test');
         
         // Step 9: Mouseover the element Linked Areas Icon
         console.log('[Stations Functionality] Step 9: Mouseover Linked Areas Icon');
@@ -93,7 +109,7 @@ test.describe('Dashboard - Stations functionality', () => {
             console.log('[Stations Functionality] ERROR: expandAndSelectManualCard should have failed but succeeded');
         } catch (error) {
             console.log('[Stations Functionality] SUCCESS: expandAndSelectManualCard failed as expected - manual alert not visible after station change');
-            console.log(`[Stations Functionality] Manual alert not visible after station change: ${error.message}`);
+            console.log(`[Stations Functionality] Manual alert not visible after station change: ${error instanceof Error ? error.message : String(error)}`);
         }
         
 
@@ -120,12 +136,12 @@ test.describe('Dashboard - Stations functionality', () => {
             
             console.log('[Stations Functionality] Cleanup completed successfully');
         } catch (error) {
-            console.log(`[Stations Functionality] Cleanup failed: ${error.message}`);
+            console.log(`[Stations Functionality] Cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
             // Try to login with admin user anyway
             try {
                 await sharedSteps.switchToAdminUser(ADMIN_USERNAME, ADMIN_PASSWORD);
             } catch (loginError) {
-                console.log(`[Stations Functionality] Failed to restore admin session: ${loginError.message}`);
+                console.log(`[Stations Functionality] Failed to restore admin session: ${loginError instanceof Error ? loginError.message : String(loginError)}`);
             }
         }
     });
