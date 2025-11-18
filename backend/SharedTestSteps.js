@@ -3180,4 +3180,133 @@ export class SharedTestSteps {
         }
     }
 
+    /**
+     * Smart wait for element with automatic retries and stability checks
+     * @param {string} selector - Element selector
+     * @param {Object} options - Wait options
+     * @returns {Promise<void>}
+     */
+    async smartWait(selector, options = {}) {
+        const timeout = options.timeout || 30000;
+        const retries = options.retries || 3;
+        const stabilityCheck = options.stabilityCheck !== false; // Default true
+        
+        console.log(`[SharedSteps] Smart wait for: ${selector}`);
+        
+        for (let i = 0; i < retries; i++) {
+            try {
+                // Wait for selector
+                await this.page.waitForSelector(selector, {
+                    state: options.state || 'visible',
+                    timeout: timeout / retries
+                });
+                
+                // Check element stability if requested
+                if (stabilityCheck) {
+                    await this.page.waitForFunction(
+                        (sel) => {
+                            const el = document.querySelector(sel);
+                            if (!el) return false;
+                            const rect = el.getBoundingClientRect();
+                            return rect.width > 0 && rect.height > 0;
+                        },
+                        selector,
+                        { timeout: 5000 }
+                    ).catch(() => {});
+                    
+                    // Short stabilization wait
+                    await this.page.waitForTimeout(500);
+                }
+                
+                console.log(`[SharedSteps] ✅ Element ready: ${selector}`);
+                return;
+                
+            } catch (error) {
+                if (i === retries - 1) {
+                    console.error(`[SharedSteps] ❌ Failed to find element after ${retries} retries: ${selector}`);
+                    throw error;
+                }
+                console.log(`[SharedSteps] ⚠️ Retry ${i + 1}/${retries} for: ${selector}`);
+                await this.page.waitForTimeout(1000);
+            }
+        }
+    }
+
+    /**
+     * Wait for network idle with timeout protection
+     * @param {Object} options - Wait options
+     * @returns {Promise<void>}
+     */
+    async waitForNetworkIdle(options = {}) {
+        const timeout = options.timeout || 10000;
+        try {
+            console.log('[SharedSteps] Waiting for network idle...');
+            await this.page.waitForLoadState('networkidle', { timeout });
+            console.log('[SharedSteps] ✅ Network idle');
+        } catch (error) {
+            console.log('[SharedSteps] ⚠️ Network idle timeout - continuing anyway');
+            // Don't throw - this is often safe to ignore in real-time apps
+        }
+    }
+
+    /**
+     * Clear all modals and overlays from the page
+     * @returns {Promise<void>}
+     */
+    async clearModalsAndOverlays() {
+        console.log('[SharedSteps] Clearing all modals and overlays...');
+        try {
+            await this.page.evaluate(() => {
+                // Remove React Aria modals
+                document.querySelectorAll('.react-aria-ModalOverlay').forEach(el => el.remove());
+                
+                // Remove generic dialogs
+                document.querySelectorAll('[role="dialog"]').forEach(el => {
+                    // Only remove if not a permanent dialog
+                    if (!el.hasAttribute('data-permanent')) {
+                        el.remove();
+                    }
+                });
+                
+                // Remove any backdrop overlays
+                document.querySelectorAll('.modal-backdrop, .overlay, [class*="backdrop"]').forEach(el => el.remove());
+            });
+            console.log('[SharedSteps] ✅ Modals and overlays cleared');
+        } catch (error) {
+            console.log(`[SharedSteps] ⚠️ Error clearing modals: ${error.message}`);
+        }
+    }
+
+    /**
+     * Enhanced wait for page load with multiple checks
+     * @returns {Promise<void>}
+     */
+    async waitForPageFullyLoaded() {
+        console.log('[SharedSteps] Waiting for page to fully load...');
+        
+        try {
+            // Wait for DOM content
+            await this.page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+            
+            // Wait for network to settle (with timeout protection)
+            await this.waitForNetworkIdle({ timeout: 10000 });
+            
+            // Wait for any loading spinners to disappear
+            await this.page.waitForFunction(() => {
+                const spinners = document.querySelectorAll('[class*="loading"], [class*="spinner"], .loader');
+                return spinners.length === 0 || Array.from(spinners).every(s => s.style.display === 'none');
+            }, { timeout: 10000 }).catch(() => {
+                console.log('[SharedSteps] Loading spinner check timeout - continuing');
+            });
+            
+            // Short final stabilization
+            await this.page.waitForTimeout(1000);
+            
+            console.log('[SharedSteps] ✅ Page fully loaded');
+        } catch (error) {
+            console.log(`[SharedSteps] ⚠️ Page load timeout: ${error.message}`);
+        }
+    }
+
 }
+

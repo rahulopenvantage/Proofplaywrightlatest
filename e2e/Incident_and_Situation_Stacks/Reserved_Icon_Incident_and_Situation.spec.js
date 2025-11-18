@@ -66,32 +66,50 @@ test.describe('Reserve Icon - Visible and Hover', () => {
         const reserveIcon = page.locator('[data-test-id="reserveIcon"]');
         const reserveIconPopup = page.locator('[data-test-id="reserveIcon"][popup-left="Proof360 Test"]');
         
-        // Enhanced stability wait for reserve icon
+        // Enhanced stability wait for reserve icon with multiple checks
+        console.log('[EscalateTest] Waiting for reserve icon to be fully rendered and stable...');
         await page.waitForFunction(() => {
             const icons = document.querySelectorAll('[data-test-id="reserveIcon"]');
-            return icons.length > 0 && Array.from(icons).every(icon => icon.offsetParent !== null);
+            return icons.length > 0 && Array.from(icons).every(icon => {
+                const rect = icon.getBoundingClientRect();
+                return icon.offsetParent !== null && rect.width > 0 && rect.height > 0;
+            });
         }, { timeout: 15000 });
+        
+        // Additional wait to ensure all animations/transitions have completed
+        await page.waitForTimeout(2000);
         
         // Hover over the reserve icon to make the popup appear
         console.log('[EscalateTest] Hovering over reserve icon...');
         await reserveIcon.hover();
-        await page.waitForTimeout(1500); // Enhanced wait for popup stability
+        await page.waitForTimeout(2000); // Enhanced wait for popup stability
         
         // Verify that the reserve icon popup is displayed
         console.log('[EscalateTest] Verifying reserve icon popup is visible...');
-        await expect(reserveIconPopup).toBeVisible();
+        await expect(reserveIconPopup).toBeVisible({ timeout: 10000 });
         
-        // Enhanced visual stability wait
+        // Enhanced visual stability wait - check for loading indicators and stable rendering
         await page.waitForFunction(() => {
-            return !document.querySelector('.loading, .spinner, [data-loading="true"]');
+            const loadingElements = document.querySelectorAll('.loading, .spinner, [data-loading="true"]');
+            if (loadingElements.length > 0) return false;
+            
+            // Check if the popup element is stable (not animating)
+            const popup = document.querySelector('[data-test-id="reserveIcon"][popup-left="Proof360 Test"]');
+            if (!popup) return false;
+            
+            const rect = popup.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
         }, { timeout: 10000 });
         
-        // Visual verification of reserve icon state - simplified approach
+        // Additional stabilization wait
+        await page.waitForTimeout(1000);
+        
+        // Visual verification of reserve icon state with increased tolerances
         console.log('[EscalateTest] Performing visual verification of reserve icon...');
         await expect(reserveIconPopup).toHaveScreenshot('manual_alert_reserve_icon.png', {
-            timeout: 20000,
-            threshold: 0.5,        // 50% tolerance for size variations
-            maxDiffPixels: 500,    // Increased for size differences
+            timeout: 30000,
+            threshold: 0.3,        // 30% tolerance (reduced from 50% for better accuracy)
+            maxDiffPixels: 300,    // Allow for minor rendering differences
             animations: 'disabled'
         });
         console.log('[EscalateTest] ✅ Visual verification passed');
@@ -118,7 +136,7 @@ test.describe('Reserve Icon - Visible and Hover', () => {
         
         // Additional wait after expanding card to ensure reserve icons are rendered
         console.log('[EscalateTest] Waiting for card expansion and reserve icon rendering...');
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(2500);
         
         // Situation Stack: Reserve icon check with enhanced validation
         console.log('[EscalateTest] Verifying reserve icon exists in Situation Stack after escalation...');
@@ -128,41 +146,57 @@ test.describe('Reserve Icon - Visible and Hover', () => {
         if (situationReserveIconCount > 0) {
             console.log('[EscalateTest] ✅ Reserve icon found on Situation Stack - proceeding with enhanced visual verification...');
             
-            // Enhanced stability wait for situation stack icons
+            // Enhanced stability wait for situation stack icons with size checks
+            console.log('[EscalateTest] Waiting for situation stack icons to be fully stable...');
             await page.waitForFunction(() => {
                 const icons = document.querySelectorAll('[data-test-id="reserveIcon"]');
-                return icons.length > 0 && Array.from(icons).every(icon => icon.offsetParent !== null);
+                return icons.length > 0 && Array.from(icons).every(icon => {
+                    const rect = icon.getBoundingClientRect();
+                    return icon.offsetParent !== null && rect.width > 0 && rect.height > 0;
+                });
             }, { timeout: 15000 });
+            
+            // Additional wait to ensure all transitions complete
+            await page.waitForTimeout(2000);
             
             // Situation Stack: Hover over the reserve icon
             console.log('[EscalateTest] Hovering over reserve icon in Situation Stack...');
             await reserveIcon.hover();
-            await page.waitForTimeout(1500);
+            await page.waitForTimeout(2000); // Enhanced wait for popup appearance
             
             // Situation Stack: Verify popup visibility
             console.log('[EscalateTest] Verifying reserve icon popup is visible in Situation Stack...');
-            await expect(reserveIconPopup).toBeVisible();
+            await expect(reserveIconPopup).toBeVisible({ timeout: 10000 });
             
-            // Enhanced visual stability for situation stack
+            // Enhanced visual stability for situation stack with comprehensive checks
+            console.log('[EscalateTest] Waiting for visual stability in Situation Stack...');
             await page.waitForFunction(() => {
-                return !document.querySelector('.loading, .spinner, [data-loading="true"]');
+                const loadingElements = document.querySelectorAll('.loading, .spinner, [data-loading="true"]');
+                if (loadingElements.length > 0) return false;
+                
+                const popup = document.querySelector('[data-test-id="reserveIcon"][popup-left="Proof360 Test"]');
+                if (!popup) return false;
+                
+                const rect = popup.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
             }, { timeout: 10000 });
             
-            // Situation Stack: Enhanced visual testing
+            // Final stabilization wait
+            await page.waitForTimeout(1000);
+            
+            // Situation Stack: Enhanced visual testing with robust settings
             console.log('[EscalateTest] Performing enhanced visual verification of reserve icon in Situation Stack...');
             try {
-                await visualTestHelper.takeRobustScreenshot(
-                    reserveIconPopup,
-                    'manual_alert_reserve_icon_situation.png',
-                    {
-                        threshold: 0.3,      // Increased tolerance for situation stack variations
-                        maxDiffPixels: 300,  // Allow more pixel differences
-                        timeout: 20000       // Extended timeout
-                    }
-                );
-                console.log('[EscalateTest] ✅ Situation Stack enhanced screenshot comparison passed');
+                await expect(reserveIconPopup).toHaveScreenshot('manual_alert_reserve_icon_situation.png', {
+                    timeout: 30000,
+                    threshold: 0.3,      // 30% tolerance
+                    maxDiffPixels: 300,  // Allow for rendering differences
+                    animations: 'disabled'
+                });
+                console.log('[EscalateTest] ✅ Situation Stack screenshot comparison passed');
             } catch (error) {
-                console.log('[EscalateTest] Enhanced Situation Stack method failed, using traditional approach...');
+                console.log('[EscalateTest] ⚠️ Situation Stack screenshot comparison failed, logging details...');
+                console.log(`[EscalateTest] Error: ${error.message}`);
                 await expect(reserveIconPopup).toHaveScreenshot('manual_alert_reserve_icon_situation.png', {
                     timeout: 20000,
                     threshold: 0.4,        // 40% tolerance for situation stack variations

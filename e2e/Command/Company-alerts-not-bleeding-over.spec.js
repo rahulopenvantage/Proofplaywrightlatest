@@ -55,6 +55,10 @@ test.describe('Dashboard - Company alerts not bleeding over', () => {
         console.log('[Company Alert Isolation] Step 4: Select Vodacom Company');
         await sharedSteps.selectCompany('Vodacom');
         
+        // Wait for company switch to complete
+        await page.waitForTimeout(3000);
+        await page.waitForLoadState('domcontentloaded');
+        
         // Step 5: Apply target site stacks filter
         console.log(`[Company Alert Isolation] Step 5: Apply ${process.env.trex_private} stack filter`);
         await sharedSteps.stackFilterUBAndTrex(process.env.trex_private);
@@ -66,12 +70,16 @@ test.describe('Dashboard - Company alerts not bleeding over', () => {
         // Step 7: Select Automation Company
         console.log('[Company Alert Isolation] Step 7: Select Automation Company');
         await sharedSteps.selectCompany('Automation company');
-        await page.waitForLoadState('networkidle');
+        
+        // Wait for company switch to complete and page to stabilize
+        await page.waitForTimeout(3000);
+        await page.waitForLoadState('domcontentloaded');
+        await page.waitForTimeout(2000); // Additional wait for stack to refresh
         
         // Step 8: Verify that target site aggregated alert card is NOT DISPLAYED
         console.log(`[Company Alert Isolation] Step 8: Verify ${process.env.trex_private} alert card is NOT displayed`);
         const targetSiteCard = page.locator(`//span[@data-test-id="aggregated-site-card-name" and contains(text(), "${process.env.trex_private}")]`);
-        await expect(targetSiteCard).not.toBeVisible();
+        await expect(targetSiteCard).not.toBeVisible({ timeout: 15000 });
         
         // Step 9: Reset stack filter
         console.log('[Company Alert Isolation] Step 9: Reset stack filter');

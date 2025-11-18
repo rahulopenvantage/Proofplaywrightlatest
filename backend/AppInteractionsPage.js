@@ -148,20 +148,20 @@ export class AppInteractionsPage {
     }
 
     /**
-     * Selects "1Track Investigations" company from the dropdown.
+     * Selects "1 SIte (Pty) Ltd" company from the dropdown.
      */
     async select1TrackInvestigationsCompany() {
-        console.log('[AppInteractions] Selecting 1Track Investigations company...');
+        console.log('[AppInteractions] Selecting 1 SIte (Pty) Ltd company...');
         
         // Click dropdown to open it
         await this.companyDropdown.click();
         await this.page.waitForTimeout(1000);
         
         // Wait for dropdown options to be visible
-        await this.page.waitForSelector('text="1Track Investigations"', { timeout: 10000 });
+        await this.page.waitForSelector('text="1 SIte (Pty) Ltd"', { timeout: 10000 });
         
         // Find and click the option with retry logic
-        const option = this.page.getByText('1Track Investigations', { exact: true });
+        const option = this.page.getByText('1 SIte (Pty) Ltd', { exact: true });
         await option.waitFor({ state: 'visible', timeout: 10000 });
         await option.click({ force: true });
         
@@ -171,9 +171,9 @@ export class AppInteractionsPage {
         // Wait for the company selection to be reflected in the dropdown
         await this.page.waitForFunction(() => {
             const dropdown = document.querySelector('[data-test-id="selected-company"] .p-dropdown-label');
-            return dropdown && dropdown.textContent && dropdown.textContent.trim() === '1Track Investigations';
+            return dropdown && dropdown.textContent && dropdown.textContent.trim() === '1 SIte (Pty) Ltd';
         }, { timeout: 30000 });
-        console.log('[AppInteractions] 1Track Investigations company selected');
+        console.log('[AppInteractions] 1 SIte (Pty) Ltd company selected');
     }
 
     /**
@@ -374,7 +374,7 @@ export class AppInteractionsPage {
             case 'Vodacom':
                 await this.selectVodacomCompany();
                 break;
-            case '1Track Investigations':
+            case '1 SIte (Pty) Ltd':
                 await this.select1TrackInvestigationsCompany();
                 break;
             default:

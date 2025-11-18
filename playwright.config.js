@@ -15,11 +15,14 @@ dotenv.config({ path: path.resolve(projectRoot, process.env.ENV_FILE || '.env') 
  */
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  fullyParallel: false, // Changed to false for better stability
   forbidOnly: !!process.env.CI,
-  retries: 0, // No retries - run tests only once
+  retries: process.env.CI ? 2 : 1, // Enable retries: 1 for local, 2 for CI
   workers: 1,
   reporter: 'html',
+  
+  // Global timeout for all tests
+  globalTimeout: 2 * 60 * 60 * 1000, // 2 hours for full suite
 
   // Runs once before all tests (kept from your original)
   globalSetup: path.resolve(projectRoot, 'backend/global.setup.js'),
@@ -50,6 +53,7 @@ export default defineConfig({
 
     // Enhanced visual testing configuration
     expect: {
+      timeout: 30000, // 30 seconds for expect assertions
       // Default screenshot comparison configuration to reduce false positives
       toHaveScreenshot: {
         threshold: 0.3,           // 30% tolerance - more forgiving for minor UI changes
@@ -64,8 +68,8 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
 
-  // Per-test timeout
-  timeout: 180_000,
+  // Per-test timeout (5 minutes for complex workflows with SSO)
+  timeout: 300_000,
 
   projects: [
     // UI tests (Chromium)

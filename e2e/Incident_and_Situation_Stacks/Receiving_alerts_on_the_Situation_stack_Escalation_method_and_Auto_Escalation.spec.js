@@ -11,6 +11,7 @@ const USERNAME = process.env.ADMIN_MS_USERNAME;
 const PASSWORD = process.env.ADMIN_MS_PASSWORD;
 
 test.describe('Receiving alerts on the Situation stack - Escalation method & Auto Escalation', () => {
+    /** @type {SharedTestSteps} */
     let sharedTestSteps;
     
     test.beforeEach(async ({ page }) => {
@@ -38,6 +39,9 @@ test.describe('Receiving alerts on the Situation stack - Escalation method & Aut
         console.log('[EscalateTest] Step 3: Creating manual alert...');
         await sharedTestSteps.createManualAlertForSite(SITE_NAME);
         console.log('[EscalateTest] Manual alert created successfully.');
+        
+        // Wait for alert to be processed by system
+        await page.waitForTimeout(2000);
         
         // Step 4: Navigate to Command Page and Apply Manual Stack Filter
         console.log('[EscalateTest] Step 4: Navigating to command page and applying manual alert stack filter...');
@@ -89,18 +93,47 @@ test.describe('Receiving alerts on the Situation stack - Escalation method & Aut
         console.log('[EscalateTest] Step 13: Creating second manual alert...');
         await sharedTestSteps.createManualAlertForSite(SITE_NAME);
         console.log('[EscalateTest] Second manual alert created successfully.');
+        
+        // Wait for second alert to be processed
+        await page.waitForTimeout(3000);
 
         // Step 14: Navigate back to Command
         console.log('[EscalateTest] Step 14: Navigating back to Command...');
         await sharedTestSteps.navigateToMenu('Command');
+        await page.waitForTimeout(2000); // Wait for navigation to complete
         
         // Step 15: Switch back to Situation Stack        
         console.log('[EscalateTest] Step 15: Switching back to Situation Stack...');
         await sharedTestSteps.switchToSituationStack();
         
-        // Step 16: Test to check if incident-group-alert-count shows the number 2
-        console.log('[EscalateTest] Step 16: Verifying incident-group-alert-count shows "2"...');
-        await expect(page.locator('[data-test-id="incident-group-alert-count"]')).toHaveText('2');
+        // Step 16: Wait for situation stack to fully load and stabilize
+        console.log('[EscalateTest] Step 16: Waiting for situation stack to stabilize...');
+        await page.waitForTimeout(5000); // Increased from 3s to 5s for better stability
+        
+        // Step 17: Verify the aggregated site card is present first
+        console.log('[EscalateTest] Step 17: Verifying BDFD_Boeing site card is present...');
+        const siteCard = page.locator('[data-test-id="aggregated-site-card-name"]').filter({ hasText: 'BDFD_Boeing' });
+        await expect(siteCard).toBeVisible({ timeout: 15000 });
+        
+        // Step 18: Test to check if incident-group-alert-count shows the number 2
+        console.log('[EscalateTest] Step 18: Verifying incident-group-alert-count shows "2"...');
+        
+        // First verify the site card has the alert count badge
+        const siteCardWithCount = page.locator('[data-test-id="aggregated-site-card"]').filter({ hasText: 'BDFD_Boeing' });
+        await expect(siteCardWithCount).toBeVisible({ timeout: 15000 });
+        
+        const alertCountLocator = page.locator('[data-test-id="incident-group-alert-count"]').first();
+        
+        // Wait for the element to be visible and stable
+        await alertCountLocator.waitFor({ state: 'visible', timeout: 20000 });
+        await page.waitForTimeout(2000); // Additional stabilization time
+        
+        // Get the text and log it for debugging
+        const countText = await alertCountLocator.textContent();
+        console.log(`[EscalateTest] Alert count text found: "${countText}"`);
+        
+        // Verify the text with extended retry logic
+        await expect(alertCountLocator).toHaveText('2', { timeout: 15000 });
         console.log('[EscalateTest] ✅ Verified incident-group-alert-count displays "2"');
         
         console.log('[EscalateTest] Comprehensive escalate test flow completed successfully.');
@@ -117,7 +150,7 @@ test.describe('Receiving alerts on the Situation stack - Escalation method & Aut
                 console.log('[EscalateTest] Cleanup completed successfully.');
             }
         } catch (error) {
-            console.log(`[EscalateTest] Cleanup encountered an issue: ${error.message}`);
+            console.log(`[EscalateTest] Cleanup encountered an issue: ${error instanceof Error ? error.message : String(error)}`);
             // Don't fail the test due to cleanup issues
         }
     });

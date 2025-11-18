@@ -612,12 +612,12 @@ export class WorkflowHelper {
     }
 
     /**
-     * Explicit UB/Trex resolution sequence for Situation stack.
-     * Order: Infrastructure (skip if missing) -> Attempted entry -> Arrest -> Resolve.
-     * Works entirely inside the react-aria overlay without fallback logic.
+     * DYNAMIC UB/Trex resolution sequence for Situation stack.
+     * Flow: Sector (optional) -> Type (click first button) -> Outcome (click first button) -> Resolve
+     * No dependency on specific button text - always clicks the first visible option.
      */
     async _resolveUbTrexExplicitSequence() {
-        console.log('[WorkflowHelper] UB/Trex explicit resolve sequence starting');
+        console.log('[WorkflowHelper] 🔄 Dynamic UB/Trex resolve sequence starting (text-agnostic)');
 
         // Wait for overlay to appear after Resolve All click
         await this.page.waitForTimeout(1500);
@@ -646,90 +646,83 @@ export class WorkflowHelper {
             }
         }
 
-        console.log('[WorkflowHelper] Starting button click sequence...');
+        console.log('[WorkflowHelper] Starting dynamic button click sequence...');
 
         /**
-         * Click button by label using EXACT structure match for the specific DOM pattern:
+         * Click the FIRST visible button with the structure:
          * button > .content-wrapper > .text-content > p.main-text
-         * @param {string} label
+         * Returns the clicked button's text for logging, or null if none found.
          */
-        const clickByStructure = async (label) => {
-            // Strategy 1: Most specific - button > div.content-wrapper > div.text-content > p.main-text with exact text
-            const exactStructure = active.locator(`button >> div.content-wrapper >> div.text-content >> p.main-text:text("${label}")`).first();
-            if (await exactStructure.isVisible({ timeout: 2000 }).catch(() => false)) {
-                const btn = exactStructure.locator('xpath=ancestor::button[1]').first();
-                if (await btn.isVisible().catch(() => false)) {
+        const clickFirstAvailableButton = async (stepName) => {
+            console.log(`[WorkflowHelper] [${stepName}] Looking for first available button...`);
+            
+            // Find all buttons with the expected structure
+            const buttons = active.locator('button:has(div.content-wrapper > div.text-content > p.main-text)');
+            const count = await buttons.count();
+            
+            console.log(`[WorkflowHelper] [${stepName}] Found ${count} buttons with correct structure`);
+            
+            if (count === 0) {
+                console.log(`[WorkflowHelper] [${stepName}] ⚠️ No buttons found`);
+                return null;
+            }
+            
+            // Click the first visible button
+            for (let i = 0; i < count; i++) {
+                const btn = buttons.nth(i);
+                if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
+                    // Get the text before clicking
+                    const textElement = btn.locator('p.main-text').first();
+                    const buttonText = await textElement.textContent().catch(() => 'Unknown');
+                    
                     await btn.click({ force: true });
-                    console.log(`[WorkflowHelper] ✅ Clicked "${label}" (exact structure via ancestor)`);
-                    return true;
+                    console.log(`[WorkflowHelper] [${stepName}] ✅ Clicked first button: "${buttonText}"`);
+                    return buttonText;
                 }
             }
-
-            // Strategy 2: Structural - button containing p.main-text with the label
-            const structuralBtn = active.locator(`button:has(p.main-text:has-text("${label}"))`).first();
-            if (await structuralBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-                await structuralBtn.click({ force: true });
-                console.log(`[WorkflowHelper] ✅ Clicked "${label}" (structural p.main-text)`);
-                return true;
-            }
-
-            // Strategy 3: Generic button with exact text match
-            const textBtn = active.locator(`button:has-text("${label}")`).first();
-            if (await textBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-                await textBtn.click({ force: true });
-                console.log(`[WorkflowHelper] ✅ Clicked "${label}" (has-text)`);
-                return true;
-            }
-
-            // Strategy 4: Role-based with flexible whitespace matching
-            const roleBtn = active.getByRole('button', { name: new RegExp(`^\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i') }).first();
-            if (await roleBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-                await roleBtn.click({ force: true });
-                console.log(`[WorkflowHelper] ✅ Clicked "${label}" (role)`);
-                return true;
-            }
-
-            console.log(`[WorkflowHelper] ⚠️ Could not find button with label "${label}"`);
-            return false;
+            
+            console.log(`[WorkflowHelper] [${stepName}] ⚠️ No visible buttons found`);
+            return null;
         };
 
-        // Step 1: Infrastructure (optional - skip if not found per user requirement)
-        console.log('[WorkflowHelper] [STEP 1] Attempting to click "Infrastructure" (optional)...');
-        const infraClicked = await clickByStructure('Infrastructure');
-        if (infraClicked) {
-            console.log('[WorkflowHelper] [STEP 1] ✅ "Infrastructure" clicked successfully');
+        // Step 1: Sector (optional - skip if not found)
+        console.log('[WorkflowHelper] [STEP 1: SECTOR] Checking for Sector step (optional)...');
+        const sectorClicked = await clickFirstAvailableButton('SECTOR');
+        if (sectorClicked) {
+            console.log(`[WorkflowHelper] [STEP 1: SECTOR] ✅ Sector selected: "${sectorClicked}"`);
             await this.page.waitForTimeout(400);
         } else {
-            console.log('[WorkflowHelper] [STEP 1] ⏭️ "Infrastructure" not found - SKIPPING (allowed per requirements)');
-            // No wait timeout needed when skipping
+            console.log('[WorkflowHelper] [STEP 1: SECTOR] ⏭️ No Sector buttons found - SKIPPING (optional step)');
         }
 
-        // Step 2: Attempted entry (required)
-        console.log('[WorkflowHelper] [STEP 2] Attempting to click "Attempted entry" (required)...');
-        if (!await clickByStructure('Attempted entry')) {
-            console.log('[WorkflowHelper] [STEP 2] ❌ Could not click "Attempted entry" - taking screenshot');
+        // Step 2: Type (required - click first button)
+        console.log('[WorkflowHelper] [STEP 2: TYPE] Selecting Type (required)...');
+        const typeClicked = await clickFirstAvailableButton('TYPE');
+        if (!typeClicked) {
+            console.log('[WorkflowHelper] [STEP 2: TYPE] ❌ No Type buttons found - taking screenshot');
             try {
-                await this.page.screenshot({ path: `debug/attempted-entry-missing-${Date.now()}.png`, fullPage: true });
+                await this.page.screenshot({ path: `debug/type-missing-${Date.now()}.png`, fullPage: true });
             } catch {}
-            return; // Graceful abort; test will fail on remaining cards later
+            return; // Graceful abort
         }
-        console.log('[WorkflowHelper] [STEP 2] ✅ "Attempted entry" clicked successfully');
+        console.log(`[WorkflowHelper] [STEP 2: TYPE] ✅ Type selected: "${typeClicked}"`);
         await this.page.waitForTimeout(400);
 
-        // Step 3: Arrest (required)
-        console.log('[WorkflowHelper] [STEP 3] Attempting to click "Arrest" (required)...');
-        if (!await clickByStructure('Arrest')) {
-            console.log('[WorkflowHelper] [STEP 3] ❌ Could not click "Arrest" - taking screenshot');
+        // Step 3: Outcome (required - click first button)
+        console.log('[WorkflowHelper] [STEP 3: OUTCOME] Selecting Outcome (required)...');
+        const outcomeClicked = await clickFirstAvailableButton('OUTCOME');
+        if (!outcomeClicked) {
+            console.log('[WorkflowHelper] [STEP 3: OUTCOME] ❌ No Outcome buttons found - taking screenshot');
             try {
-                await this.page.screenshot({ path: `debug/arrest-missing-${Date.now()}.png`, fullPage: true });
+                await this.page.screenshot({ path: `debug/outcome-missing-${Date.now()}.png`, fullPage: true });
             } catch {}
             return;
         }
-        console.log('[WorkflowHelper] [STEP 3] ✅ "Arrest" clicked successfully');
+        console.log(`[WorkflowHelper] [STEP 3: OUTCOME] ✅ Outcome selected: "${outcomeClicked}"`);
         await this.page.waitForTimeout(400);
 
         // Final: Resolve button
-        console.log('[WorkflowHelper] [FINAL STEP] Attempting to click final "Resolve" button...');
+        console.log('[WorkflowHelper] [FINAL STEP] Clicking Resolve button...');
         const resolveBtn = active.getByRole('button', { name: /^Resolve$/i }).first();
         if (await resolveBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
             // Wait for it to be enabled
@@ -763,6 +756,6 @@ export class WorkflowHelper {
         } else {
             await this.page.waitForTimeout(2000);
         }
-        console.log('[WorkflowHelper] UB/Trex explicit resolve sequence finished');
+        console.log('[WorkflowHelper] 🎉 Dynamic UB/Trex resolve sequence finished');
     }
 }

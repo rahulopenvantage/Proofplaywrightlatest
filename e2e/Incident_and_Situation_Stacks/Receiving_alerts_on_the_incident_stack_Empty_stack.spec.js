@@ -10,6 +10,7 @@ const USERNAME = process.env.ADMIN_MS_USERNAME;
 const PASSWORD = process.env.ADMIN_MS_PASSWORD;
 
 test.describe('Receiving alerts on the incident stack – Empty stack', () => {
+    /** @type {SharedTestSteps} */
     let sharedSteps;
 
     test.beforeEach(async ({ page }) => {
@@ -26,9 +27,9 @@ test.describe('Receiving alerts on the incident stack – Empty stack', () => {
         await sharedSteps.authenticateAndSetup(USERNAME, PASSWORD);
         await expect(page).toHaveURL(/.*command/, { timeout: 45000 }); // Verify navigation after login
         
-        // Step 2: Switch to the appropriate company (1Track Investigations for empty stack)
-        console.log('[EmptyStack] Step 2: Selecting 1Track Investigations company...');
-        await sharedSteps.selectCompany('1Track Investigations');
+        // Step 2: Switch to the appropriate company (1 SIte (Pty) Ltd for empty stack)
+        console.log('[EmptyStack] Step 2: Selecting 1 SIte (Pty) Ltd company...');
+        await sharedSteps.selectCompany('1 SIte (Pty) Ltd');
         console.log('[EmptyStack] Ready for testing after beforeEach login and setup');
     });    test('Ensure no Results Found is displayed for an empty Incident Stack', async ({ page }) => {
         console.log('[EmptyStack] Starting empty Incident Stack test...');
@@ -80,7 +81,7 @@ test.describe('Receiving alerts on the incident stack – Empty stack', () => {
             
             console.log('[EmptyStack] Cleanup completed successfully');
         } catch (error) {
-            console.log(`[EmptyStack] Cleanup failed: ${error.message}`);
+            console.log(`[EmptyStack] Cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
             // Don't fail test due to cleanup issues
         }
     });

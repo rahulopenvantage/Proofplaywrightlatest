@@ -10,6 +10,7 @@ const USERNAME = process.env.ADMIN_MS_USERNAME;
 const PASSWORD = process.env.ADMIN_MS_PASSWORD;
 
 test.describe('Incident and Situation stack volume counter LateAlert', () => {
+    /** @type {SharedTestSteps} */
     let sharedTestSteps;   
      test.beforeEach(async ({ page }) => {
         // Set timeout for complex operations
@@ -29,15 +30,15 @@ test.describe('Incident and Situation stack volume counter LateAlert', () => {
         
         // Step 1: Authenticate and setup
         console.log('[IncidentStackCounter] Step 1: Performing authentication and setup...');
-        await sharedTestSteps.authenticateAndSetup(USERNAME, PASSWORD);
+        await sharedTestSteps.authenticateAndSetup(USERNAME ?? '', PASSWORD ?? '');
         await expect(page).toHaveURL(/.*command/, { timeout: 45000 });
         console.log('[IncidentStackCounter] Authentication completed successfully.');
 
-        // Step 2: Select 1Track Investigations company first to verify 0 Groups
-        console.log('[IncidentStackCounter] Step 2: Selecting 1Track Investigations company...');
-        await sharedTestSteps.selectCompany('1Track Investigations');
+        // Step 2: Select 1 SIte (Pty) Ltd company first to verify 0 Groups
+        console.log('[IncidentStackCounter] Step 2: Selecting 1 SIte (Pty) Ltd company...');
+        await sharedTestSteps.selectCompany('1 SIte (Pty) Ltd');
         await expect(page.getByText('0 Groups')).toBeVisible({ timeout: 15000 });
-        console.log('[IncidentStackCounter] ✅ Verified 1Track Investigations shows "0 Groups"');
+        console.log('[IncidentStackCounter] ✅ Verified 1 SIte (Pty) Ltd shows "0 Groups"');
 
         // Step 3: Select Automation company
         console.log('[IncidentStackCounter] Step 3: Selecting Automation company...');
@@ -92,18 +93,18 @@ test.describe('Incident and Situation stack volume counter LateAlert', () => {
         await expect(page.locator('span[popup-top="Late alert suppression active"]')).toBeVisible({ timeout: 15000 });
         console.log('[IncidentStackCounter] ✅ Verified Late Alert suppression indicator is present in Situation Stack');
         
-        // Step 14: Select different company (1Track Investigations)
-        console.log('[IncidentStackCounter] Step 14: Selecting 1Track Investigations company...');
-        await sharedTestSteps.selectCompany('1Track Investigations');
-        console.log('[IncidentStackCounter] 1Track Investigations company selected successfully.');
+        // Step 14: Select different company (1 SIte (Pty) Ltd)
+        console.log('[IncidentStackCounter] Step 14: Selecting 1 SIte (Pty) Ltd company...');
+        await sharedTestSteps.selectCompany('1 SIte (Pty) Ltd');
+        console.log('[IncidentStackCounter] 1 SIte (Pty) Ltd company selected successfully.');
         
         // Step 15: Verify counter returns to "0 Groups" after company switch
         console.log('[IncidentStackCounter] Step 15: Verifying "0 Groups" counter after company switch...');
         await expect(page.getByText('0 Groups')).toBeVisible({ timeout: 15000 });
         console.log('[IncidentStackCounter] ✅ Verified counter shows "0 Groups" after company switch');
 
-        // Step 16: Switch to Situation Stack for 1Track Investigations
-        console.log('[IncidentStackCounter] Step 16: Switching to Situation Stack for 1Track Investigations...');
+        // Step 16: Switch to Situation Stack for 1 SIte (Pty) Ltd
+        console.log('[IncidentStackCounter] Step 16: Switching to Situation Stack for 1 SIte (Pty) Ltd...');
         await sharedTestSteps.switchToSituationStack();
         await expect(page.getByText('0 Groups')).toBeVisible({ timeout: 15000 });
 
@@ -133,7 +134,7 @@ test.describe('Incident and Situation stack volume counter LateAlert', () => {
             
             console.log('[IncidentStackCounter] Cleanup completed successfully');
         } catch (error) {
-            console.log(`[IncidentStackCounter] Cleanup failed: ${error.message}`);
+            console.log(`[IncidentStackCounter] Cleanup failed: ${error instanceof Error ? error.message : String(error)}`);
             // Don't fail test due to cleanup issues
         }
     });

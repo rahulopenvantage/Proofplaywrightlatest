@@ -54,9 +54,16 @@ test.describe('Proof history - Page functionality', () => {
         console.log('[HistoryPage] Step 10: Clicking on Apply filter & search button...');
         await page.locator('[data-test-id="apply_filter_search_history"]').click();
         
-        // Step 11: Wait for 5 seconds
-        console.log('[HistoryPage] Step 11: Waiting for 5 seconds...');
-        await page.waitForTimeout(5000);
+        // Step 11: Wait for table to load with data
+        console.log('[HistoryPage] Step 11: Waiting for table to load with data...');
+        await page.waitForTimeout(3000);
+        
+        // Wait for at least one table row to appear
+        await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 15000 });
+        console.log('[HistoryPage] Table data loaded successfully');
+        
+        // Additional stabilization
+        await page.waitForTimeout(2000);
         
         // Step 12: Verify History table headings (Shared Step)
         console.log('[HistoryPage] Step 12: Verifying History table headings...');
@@ -83,51 +90,142 @@ test.describe('Proof history - Page functionality', () => {
         
         // Step 17: Click on Next Page Btn
         console.log('[HistoryPage] Step 17: Clicking on Next Page Btn...');
-        await page.locator('[data-test-id="nextPageBtn"]').click();
+        const nextPageBtn = page.locator('[data-test-id="nextPageBtn"]');
+        await nextPageBtn.waitFor({ state: 'visible', timeout: 10000 });
         
-        // Step 18: Wait for 3 seconds
-        console.log('[HistoryPage] Step 18: Waiting for 3 seconds...');
-        await page.waitForTimeout(3000);
+        // Wait for page 1 text to be visible before clicking
+        await page.getByText(/Showing page 1 of \d+/).waitFor({ state: 'visible', timeout: 10000 });
         
-        // Step 19: Verify that the current page displays text Showing page 2
+        await nextPageBtn.click();
+        
+        // Step 18: Wait for page transition with explicit state change
+        console.log('[HistoryPage] Step 18: Waiting for page transition...');
+        
+        // Wait for "Showing page 1" to disappear
+        await page.waitForFunction(
+            () => {
+                const paginationText = document.querySelector('body')?.innerText || '';
+                return !paginationText.includes('Showing page 1 of');
+            },
+            { timeout: 15000 }
+        ).catch(() => console.log('[HistoryPage] Timeout waiting for page 1 to disappear'));
+        
+        // Wait for new data to load
+        await page.waitForTimeout(2000);
+        await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 10000 });
+        await page.waitForTimeout(1000);
+        
+        // Step 19: Verify that the current page displays text Showing page 2 of X
         console.log('[HistoryPage] Step 19: Verifying Showing page 2 is displayed...');
-        await expect(page.getByText('Showing page 2')).toBeVisible({ timeout: 10000 });
+        
+        // Use waitForFunction for more reliable check
+        await page.waitForFunction(
+            () => {
+                const paginationText = document.querySelector('body')?.innerText || '';
+                return /Showing page 2 of \d+/.test(paginationText);
+            },
+            { timeout: 15000 }
+        );
+        
+        await expect(page.getByText(/Showing page 2 of \d+/)).toBeVisible({ timeout: 5000 });
         
         // Step 20: Click on Previous Page Btn
         console.log('[HistoryPage] Step 20: Clicking on Previous Page Btn...');
         await page.locator('[data-test-id="previousPageBtn"]').click();
         
-        // Step 21: Wait for 3 seconds
-        console.log('[HistoryPage] Step 21: Waiting for 3 seconds...');
-        await page.waitForTimeout(3000);
+        // Step 21: Wait for page transition back to page 1
+        console.log('[HistoryPage] Step 21: Waiting for page transition back to page 1...');
         
-        // Step 22: Verify that the current page displays text Showing page 1
+        // Wait for "Showing page 2" to disappear
+        await page.waitForFunction(
+            () => {
+                const paginationText = document.querySelector('body')?.innerText || '';
+                return !paginationText.includes('Showing page 2 of');
+            },
+            { timeout: 15000 }
+        ).catch(() => console.log('[HistoryPage] Timeout waiting for page 2 to disappear'));
+        
+        await page.waitForTimeout(2000);
+        await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 10000 });
+        await page.waitForTimeout(1000);
+        
+        // Step 22: Verify that the current page displays text Showing page 1 of X
         console.log('[HistoryPage] Step 22: Verifying Showing page 1 is displayed...');
-        await expect(page.getByText('Showing page 1')).toBeVisible({ timeout: 10000 });
+        
+        // Use waitForFunction for more reliable check
+        await page.waitForFunction(
+            () => {
+                const paginationText = document.querySelector('body')?.innerText || '';
+                return /Showing page 1 of \d+/.test(paginationText);
+            },
+            { timeout: 15000 }
+        );
+        
+        await expect(page.getByText(/Showing page 1 of \d+/)).toBeVisible({ timeout: 5000 });
         
         // Step 23: Click on Last Page Btn
         console.log('[HistoryPage] Step 23: Clicking on Last Page Btn...');
+        
+        // Get the total number of pages first
+        const paginationTextBefore = await page.getByText(/Showing page \d+ of \d+/).first().textContent();
+        const totalPages = paginationTextBefore?.match(/of (\d+)/)?.[1] || '3';
+        console.log(`[HistoryPage] Total pages: ${totalPages}`);
+        
         await page.locator('[data-test-id="lastPageBtn"]').click();
         
-        // Step 24: Wait for 3 seconds
-        console.log('[HistoryPage] Step 24: Waiting for 3 seconds...');
-        await page.waitForTimeout(3000);
+        // Step 24: Wait for navigation to last page
+        console.log('[HistoryPage] Step 24: Waiting for navigation to last page...');
+        
+        // Wait for page to change to last page number
+        await page.waitForFunction(
+            (lastPage) => {
+                const paginationText = document.querySelector('body')?.innerText || '';
+                const regex = new RegExp(`Showing page ${lastPage} of`);
+                return regex.test(paginationText);
+            },
+            totalPages,
+            { timeout: 15000 }
+        ).catch(() => console.log('[HistoryPage] Timeout waiting for last page'));
+        
+        await page.waitForTimeout(2000);
+        await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 10000 });
         
         // Step 25: Verify that the current page displays text Showing page
         console.log('[HistoryPage] Step 25: Verifying Showing page is displayed...');
-        await expect(page.getByText('Showing page')).toBeVisible({ timeout: 10000 });
+        await expect(page.getByText(/Showing page \d+ of \d+/)).toBeVisible({ timeout: 10000 });
         
         // Step 26: Click on First Page Btn
         console.log('[HistoryPage] Step 26: Clicking on First Page Btn...');
         await page.locator('[data-test-id="firstPageBtn"]').click();
         
-        // Step 27: Wait for 3 seconds
-        console.log('[HistoryPage] Step 27: Waiting for 3 seconds...');
-        await page.waitForTimeout(3000);
+        // Step 27: Wait for navigation back to page 1
+        console.log('[HistoryPage] Step 27: Waiting for navigation back to page 1...');
         
-        // Step 28: Verify that the current page displays text Showing page 1
+        // Wait for page to change back to page 1
+        await page.waitForFunction(
+            () => {
+                const paginationText = document.querySelector('body')?.innerText || '';
+                return /Showing page 1 of \d+/.test(paginationText);
+            },
+            { timeout: 15000 }
+        ).catch(() => console.log('[HistoryPage] Timeout waiting for first page'));
+        
+        await page.waitForTimeout(2000);
+        await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 10000 });
+        
+        // Step 28: Verify that the current page displays text Showing page 1 of X
         console.log('[HistoryPage] Step 28: Verifying Showing page 1 is displayed...');
-        await expect(page.getByText('Showing page 1')).toBeVisible({ timeout: 10000 });
+        
+        // Use waitForFunction for more reliable check
+        await page.waitForFunction(
+            () => {
+                const paginationText = document.querySelector('body')?.innerText || '';
+                return /Showing page 1 of \d+/.test(paginationText);
+            },
+            { timeout: 15000 }
+        );
+        
+        await expect(page.getByText(/Showing page 1 of \d+/)).toBeVisible({ timeout: 5000 });
         
         // Step 29-32: Test dropdown for rows per page
         console.log('[HistoryPage] Step 29-32: Testing dropdown for rows per page...');
@@ -136,10 +234,13 @@ test.describe('Proof history - Page functionality', () => {
         console.log('[HistoryPage] Step 29: Selecting 20 rows per page...');
         const rowsPerPageDropdown = page.locator('[data-test-id="rowDropdown"]');
         await rowsPerPageDropdown.selectOption({ value: '20' });
+        await page.waitForTimeout(2000); // Wait for table reload
+        await page.waitForSelector('table tbody tr', { state: 'visible', timeout: 10000 });
         
         // Step 30: Select option using value 30 in the Rows per page dropdown list
         console.log('[HistoryPage] Step 30: Selecting 30 rows per page...');
         await rowsPerPageDropdown.selectOption({ value: '30' });
+        await page.waitForTimeout(2000); // Wait for table reload
         
         // Step 31: Select option using value 40 in the Rows per page dropdown list
         console.log('[HistoryPage] Step 31: Selecting 40 rows per page...');
